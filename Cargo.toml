@@ -1,0 +1,23 @@
+[package]
+name = "engram-parser"
+version = "0.1.0"
+edition = "2024"
+description = "CPU-only GGUF parser: casts static MoE weight matrices (F16/F32) into raw f32 voltage vectors (\"engram\" structures) and isolates per-expert weights for downstream SNNs"
+license = "GPL-3.0-or-later"
+keywords = ["gguf", "moe", "snn", "engram", "parser"]
+categories = ["parser-implementations", "science"]
+readme = "README.md"
+
+[dependencies]
+thiserror = "1.0"
+memmap2 = "0.9"
+
+[features]
+default = []
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[workspace]
