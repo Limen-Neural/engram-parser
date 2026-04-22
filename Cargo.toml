@@ -2,16 +2,15 @@
 name = "engram-parser"
 version = "0.1.0"
 edition = "2024"
-description = "CPU-only MoE weight parser: casts static weight matrices (F16/F32/BF16) from GGUF and safetensors checkpoints into raw f32 voltage vectors (\"engram\" structures) and isolates per-expert weights for downstream SNNs"
+description = "Pure-Rust, zero-dependency GGUF deserializer and Mixture-of-Experts per-expert weight extractor. Returns raw byte buffers with shape metadata; performs no neural-network math."
 license = "GPL-3.0-or-later"
-keywords = ["gguf", "safetensors", "moe", "engram", "snn"]
+repository = "https://github.com/Limen-Neural/engram-parser"
+homepage = "https://github.com/Limen-Neural/engram-parser"
+keywords = ["gguf", "moe", "parser", "weights", "deserializer"]
 categories = ["parser-implementations", "science"]
 readme = "README.md"
 
 [dependencies]
-thiserror = "1.0"
-memmap2 = "0.9"
-serde_json = "1.0"
 
 [features]
 default = []
