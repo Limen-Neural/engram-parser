@@ -1,10 +1,12 @@
-//! Mixture-of-Experts layer surgery.
+//! Mixture-of-Experts weight extraction.
 //!
-//! Locate MoE blocks inside a GGUF checkpoint, expose their router
-//! matrix, and rip out the raw voltages for any single expert.
+//! Locates MoE expert tensors inside a parsed [`GgufLayout`](crate::gguf::GgufLayout)
+//! and returns raw per-expert byte buffers. Performs no neural-network
+//! math — callers receive `Vec<u8>` + shape/dtype metadata and are
+//! responsible for any downstream compute.
 
 mod expert;
-mod layer;
+mod extract;
 
-pub use expert::MoeExpertWeights;
-pub use layer::MoeLayer;
+pub use expert::{MoeExpertWeights, RawTensor};
+pub use extract::{extract_expert, list_experts};

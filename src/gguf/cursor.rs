@@ -8,6 +8,20 @@ use crate::error::{ParserError, Result};
 pub(crate) const GGUF_MAGIC: [u8; 4] = [b'G', b'G', b'U', b'F'];
 pub(crate) const GGUF_VERSION: u32 = 3;
 
+pub(crate) fn unsupported(path: &str, reason: impl Into<String>) -> ParserError {
+    ParserError::UnsupportedFormat {
+        path: path.to_owned(),
+        reason: reason.into(),
+    }
+}
+
+pub(crate) fn invalid_layout(path: &str, reason: impl Into<String>) -> ParserError {
+    ParserError::InvalidLayout {
+        path: path.to_owned(),
+        reason: reason.into(),
+    }
+}
+
 pub(crate) const VT_U8: u32 = 0;
 pub(crate) const VT_I8: u32 = 1;
 pub(crate) const VT_U16: u32 = 2;
@@ -135,6 +149,7 @@ impl<'a> GgufCursor<'a> {
     }
 
     /// Render a scalar GGUF value as a string (used for metadata KV).
+    #[allow(dead_code)]
     pub(crate) fn read_scalar_as_string(&mut self, value_type: u32) -> Result<String> {
         match value_type {
             VT_U8 | VT_I8 | VT_U16 | VT_I16 | VT_U32 | VT_I32 | VT_U64 | VT_I64 | VT_BOOL => {
