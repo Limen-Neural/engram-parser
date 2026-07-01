@@ -84,7 +84,7 @@ fn extract_role(
     // Prefer the stacked convention first.
     let stacked_name = format!("blk.{block}.ffn_{role}_exps.weight");
     if let Some(tensor) = layout.tensors.get(&stacked_name) {
-        return Ok(Some(slice_stacked_expert(layout, tensor, expert)?));
+        return Ok(Some(slice_stacked_expert(layout, block, tensor, expert)?));
     }
 
     // Fall back to per-expert tensors. GGUF files in the wild use
@@ -117,7 +117,12 @@ fn extract_role(
 /// dimension in the `dims` vector. The per-expert chunk consists of
 /// the first `n_elements / n_experts` elements per expert, laid out
 /// contiguously in the tensor buffer.
-fn slice_stacked_expert(layout: &GgufLayout, tensor: &Tensor, expert: usize) -> Result<RawTensor> {
+fn slice_stacked_expert(
+    layout: &GgufLayout,
+    block: usize,
+    tensor: &Tensor,
+    expert: usize,
+) -> Result<RawTensor> {
     let n_experts = stacked_expert_count(tensor).ok_or_else(|| ParserError::InvalidLayout {
         path: layout.path.clone(),
         reason: format!(
@@ -130,7 +135,7 @@ fn slice_stacked_expert(layout: &GgufLayout, tensor: &Tensor, expert: usize) -> 
 
     if expert >= n_experts {
         return Err(ParserError::ExpertOutOfRange {
-            block: 0,
+            block,
             expert,
             available: n_experts,
         });

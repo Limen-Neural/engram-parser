@@ -172,7 +172,7 @@ impl Tensor {
                 ),
             });
         }
-        if !(bytes.as_ptr() as usize).is_multiple_of(std::mem::align_of::<f32>()) {
+        if !bytes.as_ptr().cast::<f32>().is_aligned() {
             return Err(ParserError::InvalidLayout {
                 path: self.name.clone(),
                 reason: "f32 tensor payload is not 4-byte aligned".into(),
@@ -204,7 +204,7 @@ impl Tensor {
                 ),
             });
         }
-        if !(bytes.as_ptr() as usize).is_multiple_of(std::mem::align_of::<u16>()) {
+        if !bytes.as_ptr().cast::<u16>().is_aligned() {
             return Err(ParserError::InvalidLayout {
                 path: self.name.clone(),
                 reason: "16-bit tensor payload is not 2-byte aligned".into(),
