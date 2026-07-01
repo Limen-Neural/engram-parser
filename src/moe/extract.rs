@@ -129,6 +129,27 @@ fn slice_stacked_expert(
     tensor: &Tensor,
     expert: usize,
 ) -> Result<RawTensor> {
+    let n_experts = validate_stacked_expert_count(layout, block, tensor, expert)?;
+    let bytes = layout.tensor_bytes(tensor)?;
+    let (start, end) = stacked_slice_range(layout, tensor, expert, n_experts, bytes.len())?;
+    let per_expert_dims: Vec<usize> = tensor.dims[..tensor.dims.len() - 1].to_vec();
+
+    Ok(RawTensor {
+        source_name: tensor.name.clone(),
+        dims: per_expert_dims,
+        dtype: tensor.dtype,
+        ggml_type: tensor.ggml_type,
+        bytes: bytes[start..end].to_vec(),
+        stacked_slice: true,
+    })
+}
+
+fn validate_stacked_expert_count(
+    layout: &GgufLayout,
+    block: usize,
+    tensor: &Tensor,
+    expert: usize,
+) -> Result<usize> {
     let n_experts = stacked_expert_count(tensor).ok_or_else(|| ParserError::InvalidLayout {
         path: layout.path.clone(),
         reason: format!(
@@ -154,7 +175,16 @@ fn slice_stacked_expert(
         });
     }
 
-    let bytes = layout.tensor_bytes(tensor)?;
+    Ok(n_experts)
+}
+
+fn stacked_slice_range(
+    layout: &GgufLayout,
+    tensor: &Tensor,
+    expert: usize,
+    n_experts: usize,
+    buffer_len: usize,
+) -> Result<(usize, usize)> {
     if !tensor.byte_len.is_multiple_of(n_experts) {
         return Err(ParserError::InvalidLayout {
             path: layout.path.clone(),
@@ -164,6 +194,7 @@ fn slice_stacked_expert(
             ),
         });
     }
+
     let stride = tensor.byte_len / n_experts;
     let start = expert
         .checked_mul(stride)
@@ -172,29 +203,17 @@ fn slice_stacked_expert(
             reason: format!("stacked stride overflow for tensor '{}'", tensor.name),
         })?;
     let end = start + stride;
-    if end > bytes.len() {
+    if end > buffer_len {
         return Err(ParserError::InvalidLayout {
             path: layout.path.clone(),
             reason: format!(
-                "stacked slice range [{start}..{end}] for tensor '{}' exceeds buffer len {}",
+                "stacked slice range [{start}..{end}] for tensor '{}' exceeds buffer len {buffer_len}",
                 tensor.name,
-                bytes.len()
             ),
         });
     }
 
-    // Per-expert dims: drop the trailing expert axis.
-    let per_expert_dims: Vec<usize> = tensor.dims[..tensor.dims.len() - 1].to_vec();
-    let chunk = bytes[start..end].to_vec();
-
-    Ok(RawTensor {
-        source_name: tensor.name.clone(),
-        dims: per_expert_dims,
-        dtype: tensor.dtype,
-        ggml_type: tensor.ggml_type,
-        bytes: chunk,
-        stacked_slice: true,
-    })
+    Ok((start, end))
 }
 
 /// For a stacked MoE tensor, the expert axis is the outermost (last)

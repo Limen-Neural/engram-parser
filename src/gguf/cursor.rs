@@ -182,16 +182,19 @@ impl<'a> GgufCursor<'a> {
             VT_STRING => {
                 let _ = self.read_string()?;
             }
-            VT_ARRAY => {
-                let nested = self.read_u32()?;
-                let len = self.read_u64()? as usize;
-                for _ in 0..len {
-                    self.skip_value(nested)?;
-                }
-            }
+            VT_ARRAY => self.skip_array_value()?,
             other => {
                 return Err(self.unsupported(format!("unsupported GGUF value type {other}")));
             }
+        }
+        Ok(())
+    }
+
+    fn skip_array_value(&mut self) -> Result<()> {
+        let nested = self.read_u32()?;
+        let len = self.read_u64()? as usize;
+        for _ in 0..len {
+            self.skip_value(nested)?;
         }
         Ok(())
     }
