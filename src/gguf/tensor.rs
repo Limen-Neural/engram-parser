@@ -176,6 +176,31 @@ impl Tensor {
             .collect())
     }
 
+    /// Decode F16/BF16 tensor bytes into raw `u16` lane values using
+    /// little-endian chunk parsing (no numeric conversion).
+    pub fn read_u16_values(&self, bytes: &[u8]) -> Result<Vec<u16>> {
+        if !matches!(self.dtype, DType::F16 | DType::BF16) {
+            return Err(ParserError::UnsupportedFormat {
+                path: self.name.clone(),
+                reason: format!("read_u16_values called on dtype {:?}", self.dtype),
+            });
+        }
+        if bytes.len() != self.n_elements * 2 {
+            return Err(ParserError::InvalidLayout {
+                path: self.name.clone(),
+                reason: format!(
+                    "16-bit byte-length mismatch: bytes={}, expected={}",
+                    bytes.len(),
+                    self.n_elements * 2
+                ),
+            });
+        }
+        Ok(bytes
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect())
+    }
+
     /// Decode an F16 tensor into a newly-allocated `Vec<f32>`. The only
     /// numeric conversion exposed by this crate — purely a bit-level
     /// reinterpretation of each 16-bit half into a 32-bit float.
