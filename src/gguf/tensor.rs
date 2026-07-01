@@ -210,12 +210,13 @@ pub fn f16_bits_to_f32(bits: u16) -> f32 {
     let sign = ((bits as u32) & 0x8000) << 16;
     let exp = ((bits as u32) & 0x7C00) >> 10;
     let mant = ((bits as u32) & 0x03FF) << 13;
-    let val = if exp == 0 {
-        mant
-    } else if exp == 31 {
-        0x7F800000 | mant
-    } else {
-        ((exp + 127 - 15) << 23) | mant
-    };
-    f32::from_bits(sign | val)
+    f32::from_bits(sign | f16_payload_bits(exp, mant))
+}
+
+fn f16_payload_bits(exp: u32, mant: u32) -> u32 {
+    match exp {
+        0 => mant,
+        31 => 0x7F800000 | mant,
+        biased => ((biased + 127 - 15) << 23) | mant,
+    }
 }

@@ -29,19 +29,25 @@ pub fn list_experts(layout: &GgufLayout) -> Vec<(usize, usize)> {
     let mut pairs: BTreeSet<(usize, usize)> = BTreeSet::new();
 
     for tensor in layout.tensors.values() {
-        if let Some((block, role)) = parse_stacked_name(&tensor.name) {
-            let _ = role;
-            if let Some(n_experts) = stacked_expert_count(tensor) {
-                for e in 0..n_experts {
-                    pairs.insert((block, e));
-                }
-            }
-        } else if let Some((block, _role, expert)) = parse_per_expert_name(&tensor.name) {
-            pairs.insert((block, expert));
-        }
+        record_expert_pairs(tensor, &mut pairs);
     }
 
     pairs.into_iter().collect()
+}
+
+fn record_expert_pairs(tensor: &Tensor, pairs: &mut BTreeSet<(usize, usize)>) {
+    if let Some((block, _role)) = parse_stacked_name(&tensor.name) {
+        if let Some(n_experts) = stacked_expert_count(tensor) {
+            for expert in 0..n_experts {
+                pairs.insert((block, expert));
+            }
+        }
+        return;
+    }
+
+    if let Some((block, _role, expert)) = parse_per_expert_name(&tensor.name) {
+        pairs.insert((block, expert));
+    }
 }
 
 /// Extract the raw weights for a single `(block, expert)` pair.
@@ -204,21 +210,23 @@ fn stacked_expert_count(tensor: &Tensor) -> Option<usize> {
 /// Parse a stacked MoE tensor name into `(block, role)`. Returns
 /// `None` if the name does not match the `blk.{B}.ffn_{role}_exps.weight`
 /// convention.
+const STACKED_NAME_SUFFIXES: &[(&str, &str)] = &[
+    ("ffn_gate_exps.weight", "gate"),
+    ("ffn_up_exps.weight", "up"),
+    ("ffn_down_exps.weight", "down"),
+];
+
 fn parse_stacked_name(name: &str) -> Option<(usize, &'static str)> {
     let rest = name.strip_prefix("blk.")?;
     let (block_str, tail) = rest.split_once('.')?;
     let block: usize = block_str.parse().ok()?;
 
-    let role = if tail == "ffn_gate_exps.weight" {
-        "gate"
-    } else if tail == "ffn_up_exps.weight" {
-        "up"
-    } else if tail == "ffn_down_exps.weight" {
-        "down"
-    } else {
-        return None;
-    };
-    Some((block, role))
+    for (suffix, role) in STACKED_NAME_SUFFIXES {
+        if tail == *suffix {
+            return Some((block, role));
+        }
+    }
+    None
 }
 
 const PER_EXPERT_NAME_PATTERNS: &[(&str, &str)] = &[
