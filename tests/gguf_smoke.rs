@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! End-to-end smoke test: build a synthetic GGUF in memory, parse it,
 //! and verify that expert extraction round-trips both the stacked and
 //! per-expert storage conventions.
