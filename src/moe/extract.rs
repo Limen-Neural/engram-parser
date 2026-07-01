@@ -133,6 +133,13 @@ fn slice_stacked_expert(
         ),
     })?;
 
+    if n_experts == 0 {
+        return Err(ParserError::InvalidLayout {
+            path: layout.path.clone(),
+            reason: format!("stacked tensor '{}' has zero experts", tensor.name),
+        });
+    }
+
     if expert >= n_experts {
         return Err(ParserError::ExpertOutOfRange {
             block,
@@ -214,6 +221,15 @@ fn parse_stacked_name(name: &str) -> Option<(usize, &'static str)> {
     Some((block, role))
 }
 
+const PER_EXPERT_NAME_PATTERNS: &[(&str, &str)] = &[
+    ("ffn_gate.", "gate"),
+    ("ffn_up.", "up"),
+    ("ffn_down.", "down"),
+    ("ffn_gate_", "gate"),
+    ("ffn_up_", "up"),
+    ("ffn_down_", "down"),
+];
+
 /// Parse a per-expert MoE tensor name into `(block, role, expert)`.
 /// Matches both `blk.B.ffn_ROLE.E.weight` and `blk.B.ffn_ROLE_E.weight`
 /// forms.
@@ -222,27 +238,15 @@ fn parse_per_expert_name(name: &str) -> Option<(usize, &'static str, usize)> {
     let (block_str, tail) = rest.split_once('.')?;
     let block: usize = block_str.parse().ok()?;
 
-    for (prefix, role) in [
-        ("ffn_gate.", "gate"),
-        ("ffn_up.", "up"),
-        ("ffn_down.", "down"),
-    ] {
-        if let Some(sub) = tail.strip_prefix(prefix) {
-            let expert_str = sub.strip_suffix(".weight")?;
-            let expert: usize = expert_str.parse().ok()?;
-            return Some((block, role, expert));
-        }
-    }
-    for (prefix, role) in [
-        ("ffn_gate_", "gate"),
-        ("ffn_up_", "up"),
-        ("ffn_down_", "down"),
-    ] {
-        if let Some(sub) = tail.strip_prefix(prefix) {
-            let expert_str = sub.strip_suffix(".weight")?;
-            let expert: usize = expert_str.parse().ok()?;
+    for (prefix, role) in PER_EXPERT_NAME_PATTERNS {
+        if let Some(expert) = parse_expert_index(tail, prefix) {
             return Some((block, role, expert));
         }
     }
     None
+}
+
+fn parse_expert_index(tail: &str, prefix: &str) -> Option<usize> {
+    let sub = tail.strip_prefix(prefix)?;
+    sub.strip_suffix(".weight")?.parse().ok()
 }

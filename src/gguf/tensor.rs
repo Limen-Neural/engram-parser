@@ -151,15 +151,13 @@ pub struct Tensor {
 }
 
 impl Tensor {
-    /// Reinterpret the tensor's payload as a `&[f32]` slice.
-    ///
-    /// Returns an error if the dtype is not `F32` or if alignment /
-    /// length invariants are violated.
-    pub fn as_f32_slice<'a>(&self, bytes: &'a [u8]) -> Result<&'a [f32]> {
+    /// Decode F32 tensor bytes into a `Vec<f32>` using little-endian
+    /// chunk parsing (no `unsafe` reinterpretation).
+    pub fn read_f32_values(&self, bytes: &[u8]) -> Result<Vec<f32>> {
         if self.dtype != DType::F32 {
             return Err(ParserError::UnsupportedFormat {
                 path: self.name.clone(),
-                reason: format!("as_f32_slice called on dtype {:?}", self.dtype),
+                reason: format!("read_f32_values called on dtype {:?}", self.dtype),
             });
         }
         if bytes.len() != self.n_elements * 4 {
@@ -172,48 +170,10 @@ impl Tensor {
                 ),
             });
         }
-        if !bytes.as_ptr().cast::<f32>().is_aligned() {
-            return Err(ParserError::InvalidLayout {
-                path: self.name.clone(),
-                reason: "f32 tensor payload is not 4-byte aligned".into(),
-            });
-        }
-        // SAFETY: dtype, length, and alignment all checked above; lifetime
-        // is tied to the input slice which borrows the owning layout.
-        let slice =
-            unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const f32, self.n_elements) };
-        Ok(slice)
-    }
-
-    /// Reinterpret the tensor's payload as a `&[u16]` slice of raw F16
-    /// or BF16 bits (no conversion performed).
-    pub fn as_u16_bits<'a>(&self, bytes: &'a [u8]) -> Result<&'a [u16]> {
-        if !matches!(self.dtype, DType::F16 | DType::BF16) {
-            return Err(ParserError::UnsupportedFormat {
-                path: self.name.clone(),
-                reason: format!("as_u16_bits called on dtype {:?}", self.dtype),
-            });
-        }
-        if bytes.len() != self.n_elements * 2 {
-            return Err(ParserError::InvalidLayout {
-                path: self.name.clone(),
-                reason: format!(
-                    "16-bit byte-length mismatch: bytes={}, expected={}",
-                    bytes.len(),
-                    self.n_elements * 2
-                ),
-            });
-        }
-        if !bytes.as_ptr().cast::<u16>().is_aligned() {
-            return Err(ParserError::InvalidLayout {
-                path: self.name.clone(),
-                reason: "16-bit tensor payload is not 2-byte aligned".into(),
-            });
-        }
-        // SAFETY: dtype, length, and alignment checked above.
-        let slice =
-            unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const u16, self.n_elements) };
-        Ok(slice)
+        Ok(bytes
+            .chunks_exact(4)
+            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect())
     }
 
     /// Decode an F16 tensor into a newly-allocated `Vec<f32>`. The only
