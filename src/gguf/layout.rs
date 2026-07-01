@@ -9,9 +9,7 @@
 
 use std::collections::HashMap;
 
-use super::cursor::{
-    GGUF_MAGIC, GGUF_VERSION, GgufCursor, VT_STRING, invalid_layout, unsupported,
-};
+use super::cursor::{GGUF_MAGIC, GGUF_VERSION, GgufCursor, VT_STRING, invalid_layout, unsupported};
 use super::tensor::{DType, Tensor};
 use crate::error::{ParserError, Result};
 
