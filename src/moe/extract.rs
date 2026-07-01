@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Per-expert weight extraction from a parsed [`GgufLayout`].
 //!
 //! Two on-disk conventions are supported:
@@ -115,11 +117,7 @@ fn extract_role(
 /// dimension in the `dims` vector. The per-expert chunk consists of
 /// the first `n_elements / n_experts` elements per expert, laid out
 /// contiguously in the tensor buffer.
-fn slice_stacked_expert(
-    layout: &GgufLayout,
-    tensor: &Tensor,
-    expert: usize,
-) -> Result<RawTensor> {
+fn slice_stacked_expert(layout: &GgufLayout, tensor: &Tensor, expert: usize) -> Result<RawTensor> {
     let n_experts = stacked_expert_count(tensor).ok_or_else(|| ParserError::InvalidLayout {
         path: layout.path.clone(),
         reason: format!(
@@ -139,7 +137,7 @@ fn slice_stacked_expert(
     }
 
     let bytes = layout.tensor_bytes(tensor)?;
-    if tensor.byte_len % n_experts != 0 {
+    if !tensor.byte_len.is_multiple_of(n_experts) {
         return Err(ParserError::InvalidLayout {
             path: layout.path.clone(),
             reason: format!(
@@ -149,10 +147,12 @@ fn slice_stacked_expert(
         });
     }
     let stride = tensor.byte_len / n_experts;
-    let start = expert.checked_mul(stride).ok_or_else(|| ParserError::InvalidLayout {
-        path: layout.path.clone(),
-        reason: format!("stacked stride overflow for tensor '{}'", tensor.name),
-    })?;
+    let start = expert
+        .checked_mul(stride)
+        .ok_or_else(|| ParserError::InvalidLayout {
+            path: layout.path.clone(),
+            reason: format!("stacked stride overflow for tensor '{}'", tensor.name),
+        })?;
     let end = start + stride;
     if end > bytes.len() {
         return Err(ParserError::InvalidLayout {

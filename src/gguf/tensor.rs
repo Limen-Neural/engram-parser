@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Tensor directory entry + dtype enumeration.
 //!
 //! A [`Tensor`] is a pure metadata descriptor: name, shape, dtype, and
@@ -115,7 +117,7 @@ impl DType {
 }
 
 fn block_bytes(n_elements: usize, block_size: usize, block_bytes: usize) -> Option<usize> {
-    if n_elements % block_size != 0 {
+    if !n_elements.is_multiple_of(block_size) {
         return None;
     }
     (n_elements / block_size).checked_mul(block_bytes)
@@ -170,7 +172,7 @@ impl Tensor {
                 ),
             });
         }
-        if bytes.as_ptr() as usize % std::mem::align_of::<f32>() != 0 {
+        if !(bytes.as_ptr() as usize).is_multiple_of(std::mem::align_of::<f32>()) {
             return Err(ParserError::InvalidLayout {
                 path: self.name.clone(),
                 reason: "f32 tensor payload is not 4-byte aligned".into(),
@@ -178,9 +180,8 @@ impl Tensor {
         }
         // SAFETY: dtype, length, and alignment all checked above; lifetime
         // is tied to the input slice which borrows the owning layout.
-        let slice = unsafe {
-            std::slice::from_raw_parts(bytes.as_ptr() as *const f32, self.n_elements)
-        };
+        let slice =
+            unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const f32, self.n_elements) };
         Ok(slice)
     }
 
@@ -203,16 +204,15 @@ impl Tensor {
                 ),
             });
         }
-        if bytes.as_ptr() as usize % std::mem::align_of::<u16>() != 0 {
+        if !(bytes.as_ptr() as usize).is_multiple_of(std::mem::align_of::<u16>()) {
             return Err(ParserError::InvalidLayout {
                 path: self.name.clone(),
                 reason: "16-bit tensor payload is not 2-byte aligned".into(),
             });
         }
         // SAFETY: dtype, length, and alignment checked above.
-        let slice = unsafe {
-            std::slice::from_raw_parts(bytes.as_ptr() as *const u16, self.n_elements)
-        };
+        let slice =
+            unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const u16, self.n_elements) };
         Ok(slice)
     }
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Hand-rolled error types for `engram-parser`.
 //!
 //! Zero external dependencies: no `thiserror`, no `anyhow`. Callers may

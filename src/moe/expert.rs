@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Per-expert raw weight bundle.
 //!
 //! Each expert has up to three projections (`gate`, `up`, `down`),

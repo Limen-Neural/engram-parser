@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! # engram-parser
 //!
 //! Pure-Rust, **zero-dependency** `.gguf` deserializer and
@@ -29,7 +31,5 @@ pub mod gguf;
 pub mod moe;
 
 pub use error::{ParserError, Result};
-pub use gguf::{
-    DType, GgufLayout, GgufMetadata, Tensor, f16_bits_to_f32, load_gguf, parse_bytes,
-};
+pub use gguf::{DType, GgufLayout, GgufMetadata, Tensor, f16_bits_to_f32, load_gguf, parse_bytes};
 pub use moe::{MoeExpertWeights, RawTensor, extract_expert, list_experts};

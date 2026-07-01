@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Parsed GGUF file layout: metadata KV store + tensor directory.
 //!
 //! This module is file-agnostic: it operates on an already-loaded
@@ -100,10 +102,12 @@ impl GgufLayout {
 
     /// Lookup a tensor by exact name.
     pub fn tensor(&self, name: &str) -> Result<&Tensor> {
-        self.tensors.get(name).ok_or_else(|| ParserError::MissingTensor {
-            name: name.to_owned(),
-            path: self.path.clone(),
-        })
+        self.tensors
+            .get(name)
+            .ok_or_else(|| ParserError::MissingTensor {
+                name: name.to_owned(),
+                path: self.path.clone(),
+            })
     }
 
     /// Find all tensors whose name ends with the given suffix. Useful
@@ -121,7 +125,10 @@ impl GgufLayout {
 
 /// Parse the GGUF header + KV metadata + tensor directory out of a
 /// byte slice. Does not validate payload bytes, only directory offsets.
-pub(crate) fn parse_layout(bytes: &[u8], path: &str) -> Result<(GgufMetadata, HashMap<String, Tensor>, usize, usize)> {
+pub(crate) fn parse_layout(
+    bytes: &[u8],
+    path: &str,
+) -> Result<(GgufMetadata, HashMap<String, Tensor>, usize, usize)> {
     let mut cursor = GgufCursor::new(bytes, path);
 
     let magic = cursor.read_exact(4)?;
@@ -192,9 +199,12 @@ pub(crate) fn parse_layout(bytes: &[u8], path: &str) -> Result<(GgufMetadata, Ha
         let relative_offset = cursor.read_u64()? as usize;
         let dtype = DType::from_ggml_type(ggml_type);
 
-        let n_elements = dims.iter().try_fold(1usize, |acc, &d| acc.checked_mul(d)).ok_or_else(
-            || invalid_layout(path, format!("tensor '{name}' element count overflow")),
-        )?;
+        let n_elements = dims
+            .iter()
+            .try_fold(1usize, |acc, &d| acc.checked_mul(d))
+            .ok_or_else(|| {
+                invalid_layout(path, format!("tensor '{name}' element count overflow"))
+            })?;
         let byte_len = dtype.byte_len_for_elements(n_elements).ok_or_else(|| {
             invalid_layout(
                 path,

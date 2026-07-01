@@ -1,5 +1,8 @@
 # engram-parser
 
+[![CI](https://github.com/Limen-Neural/engram-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/Limen-Neural/engram-parser/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+
 Pure-Rust, **zero-dependency** `.gguf` deserializer and
 Mixture-of-Experts per-expert weight extractor.
 
@@ -20,6 +23,43 @@ Mixture-of-Experts per-expert weight extractor.
   conversion is available as an optional helper only.
 - No CUDA, no GPU, no SIMD.
 - No runtime dependencies. `[dependencies]` is intentionally empty.
+
+## Scope / Boundaries
+
+This crate **owns**:
+
+- GGUF v3 deserialization (header, KV metadata, tensor directory).
+- MoE expert enumeration (`list_experts`).
+- Per-expert raw weight extraction (`extract_expert` — gate/up/down byte
+  buffers with shape and dtype metadata).
+- Zero-dependency, layout-aware dtype handling (F32/F16/BF16 plus opaque
+  quant types as raw bytes).
+
+This crate **does not own**:
+
+- Neural-network math (matmul, forward, routing, softmax, dequantization
+  in the default build).
+- CUDA/GPU/SIMD execution.
+- Tokenization, inference orchestration, or SNN dynamics.
+- Full checkpoint routing or model-family adapters (see
+  [`cortex-tensor`](https://github.com/Limen-Neural/cortex-tensor)).
+
+**Allowed dependencies:** none — `[dependencies]` stays empty.
+
+**Forbidden dependencies:** inference engines, GPU backends, domain-specific
+adapters.
+
+| Crate | Role |
+|-------|------|
+| `engram-parser` | GGUF parse + per-expert weight extraction |
+| [`cortex-tensor`](https://github.com/Limen-Neural/cortex-tensor) | Tensor math + MoE routing on extracted weights |
+| [`hybrid-fusion`](https://github.com/Limen-Neural/hybrid-fusion) | ANN→SNN orchestration |
+| [`neuromod`](https://github.com/Limen-Neural/neuromod) | SNN neuron dynamics (downstream consumer) |
+
+See [LIM-9](https://linear.app/saaq-spiking-adaptive-activity/issue/LIM-9/plan-rust-runtime-and-deployment-repo-boundary-matrix)
+for the full Rust runtime/deployment boundary matrix and
+[issue #4](https://github.com/Limen-Neural/engram-parser/issues/4) for
+this repo's tracking issue.
 
 ## Quick start
 
@@ -51,3 +91,20 @@ is returned as raw `Vec<u8>`.
 `load_gguf`, `parse_bytes`, `GgufLayout`, `GgufMetadata`, `Tensor`,
 `DType`, `extract_expert`, `list_experts`, `MoeExpertWeights`,
 `RawTensor`, `ParserError`, `Result`.
+
+## Development
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
+```
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE-2.0](LICENSE-APACHE-2.0) or [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0))
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or [http://opensource.org/licenses/MIT](http://opensource.org/licenses/MIT))
+
+at your option.
