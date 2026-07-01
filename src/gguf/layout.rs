@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 
 use super::cursor::{
-    GGUF_MAGIC, GGUF_VERSION, GgufCursor, VT_ARRAY, VT_STRING, invalid_layout, unsupported,
+    GGUF_MAGIC, GGUF_VERSION, GgufCursor, VT_STRING, invalid_layout, unsupported,
 };
 use super::tensor::{DType, Tensor};
 use crate::error::{ParserError, Result};
@@ -143,6 +143,16 @@ pub(crate) fn parse_layout(
 }
 
 fn read_layout_header(cursor: &mut GgufCursor<'_>, path: &str) -> Result<LayoutHeader> {
+    validate_gguf_header(cursor, path)?;
+    let tensor_count = bounded_count(cursor.read_u64()?, MAX_TENSOR_COUNT, "tensor_count", path)?;
+    let kv_count = bounded_count(cursor.read_u64()?, MAX_KV_COUNT, "kv_count", path)?;
+    Ok(LayoutHeader {
+        tensor_count,
+        kv_count,
+    })
+}
+
+fn validate_gguf_header(cursor: &mut GgufCursor<'_>, path: &str) -> Result<()> {
     let magic = cursor.read_exact(4)?;
     if magic != GGUF_MAGIC {
         return Err(unsupported(
@@ -159,12 +169,7 @@ fn read_layout_header(cursor: &mut GgufCursor<'_>, path: &str) -> Result<LayoutH
         ));
     }
 
-    let tensor_count = bounded_count(cursor.read_u64()?, MAX_TENSOR_COUNT, "tensor_count", path)?;
-    let kv_count = bounded_count(cursor.read_u64()?, MAX_KV_COUNT, "kv_count", path)?;
-    Ok(LayoutHeader {
-        tensor_count,
-        kv_count,
-    })
+    Ok(())
 }
 
 fn bounded_count(raw: u64, limit: u64, label: &str, path: &str) -> Result<usize> {
@@ -293,29 +298,58 @@ fn capture_kv(
     };
     match value_type {
         VT_U8 | VT_I8 | VT_U16 | VT_I16 | VT_U32 | VT_I32 | VT_U64 | VT_I64 | VT_BOOL => {
-            let v = cursor.read_numeric_as_u64(value_type)?;
-            metadata.numerics.insert(key, v);
+            capture_numeric_kv(cursor, metadata, key, value_type)
         }
-        VT_F32 => {
-            let v = cursor.read_f32()?;
-            metadata.floats_32.insert(key, v);
-        }
-        VT_F64 => {
-            let v = cursor.read_f64()?;
-            metadata.floats_64.insert(key, v);
-        }
-        VT_STRING => {
-            let v = cursor.read_string()?;
-            metadata.strings.insert(key, v);
-        }
-        VT_ARRAY => {
-            cursor.skip_value(value_type)?;
-        }
-        _ => {
-            cursor.skip_value(value_type)?;
-        }
+        VT_F32 => capture_f32_kv(cursor, metadata, key),
+        VT_F64 => capture_f64_kv(cursor, metadata, key),
+        VT_STRING => capture_string_kv(cursor, metadata, key),
+        _ => capture_skipped_kv(cursor, value_type),
     }
+}
+
+fn capture_numeric_kv(
+    cursor: &mut GgufCursor<'_>,
+    metadata: &mut GgufMetadata,
+    key: String,
+    value_type: u32,
+) -> Result<()> {
+    let v = cursor.read_numeric_as_u64(value_type)?;
+    metadata.numerics.insert(key, v);
     Ok(())
+}
+
+fn capture_f32_kv(
+    cursor: &mut GgufCursor<'_>,
+    metadata: &mut GgufMetadata,
+    key: String,
+) -> Result<()> {
+    let v = cursor.read_f32()?;
+    metadata.floats_32.insert(key, v);
+    Ok(())
+}
+
+fn capture_f64_kv(
+    cursor: &mut GgufCursor<'_>,
+    metadata: &mut GgufMetadata,
+    key: String,
+) -> Result<()> {
+    let v = cursor.read_f64()?;
+    metadata.floats_64.insert(key, v);
+    Ok(())
+}
+
+fn capture_string_kv(
+    cursor: &mut GgufCursor<'_>,
+    metadata: &mut GgufMetadata,
+    key: String,
+) -> Result<()> {
+    let v = cursor.read_string()?;
+    metadata.strings.insert(key, v);
+    Ok(())
+}
+
+fn capture_skipped_kv(cursor: &mut GgufCursor<'_>, value_type: u32) -> Result<()> {
+    cursor.skip_value(value_type)
 }
 
 fn align_up(value: usize, alignment: usize) -> usize {
