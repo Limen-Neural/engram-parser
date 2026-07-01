@@ -1,6 +1,7 @@
 ---
 exclude_paths:
   - "Cargo.lock"
+  - ".github/workflows/rust.yml"
 engines:
   hadolint:
     exclude_paths:
