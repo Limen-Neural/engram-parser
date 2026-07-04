@@ -51,3 +51,46 @@ is returned as raw `Vec<u8>`.
 `load_gguf`, `parse_bytes`, `GgufLayout`, `GgufMetadata`, `Tensor`,
 `DType`, `extract_expert`, `list_experts`, `MoeExpertWeights`,
 `RawTensor`, `ParserError`, `Result`.
+
+## Ecosystem / Sibling parsers (LIM-9)
+
+- **engram-parser** (this crate): canonical zero-dep GGUF v3 deserializer + per-expert MoE raw weight ripper.
+- Safetensors extraction (header inspection, deterministic manifest, MoE router/expert candidate discovery via classify + groups + layout families) from `rmems/corinth-canal` (experimental source of inspiration) is tracked as a **separate issue** in this repo: #10 (parallel to the GGUF work in #7).
+  - Source-side bootstrap/supporting: rmems/corinth-canal#116.
+  - Coordination for consumers (e.g. future multi-format in cortex): Limen-Neural/cortex-tensor#9.
+  - The reusable implementation will target a dedicated Limen-Neural crate (per org boundary matrix LIM-9); engram-parser charter remains GGUF-only.
+- **Clarification**: one-way extraction/copy of code from inspiration. We are not adding any dependency from corinth-canal. corinth-canal keeps an unmodified reference copy (per its PROMOTION_RULES "frozen" status). See #10, #7, and the plan for full cross-links and "no dep on corinth-canal" language.
+
+Cross-links and updates performed when #10 was created.
+
+## Development
+
+This is a pure-Rust, zero-dependency crate. All commands use `--all-features`.
+
+```bash
+# Format
+cargo fmt --check
+
+# Lint (fail on warnings)
+cargo clippy --all-targets --all-features -- -D warnings
+
+# Build
+cargo build --all-features
+
+# Test
+cargo test --all-features
+
+# Coverage (local; uses cargo-llvm-cov)
+cargo llvm-cov --lib --all-features --locked --lcov --output-path lcov.info
+```
+
+## CI
+
+- GitHub Actions: `.github/workflows/ci.yml` (harden in progress via #11; uses Codecov per https://about.codecov.io/language/rust/ )
+- Azure Pipelines: `azure-pipelines.yml` (tracked in #8 for cross-platform ubuntu/mac/windows)
+- Docker: `Dockerfile` + `.github/workflows/docker-build.yml` (tracked in #9 for GHCR reproducible builds; use user's Docker CLI for local verification)
+- Other CI/DX issues: #12 (security), #13 (releases on tags w/ sentry option), #14 (MSRV), #15 (Dependabot no auto-merge), #16 (layout clean)
+
+See the issue bodies for full ACs and corinth-canal inspiration patterns (one-way copy only; no dep on corinth-canal).
+
+Cross-reference: #11, #8, #9, #7, #5, LIM-9.

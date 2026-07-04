@@ -1,0 +1,24 @@
+# Minimal Codecov config for Rust (per https://about.codecov.io/language/rust/ and #11 AC)
+# We will use codecov https://about.codecov.io/language/rust/
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"
+
+  status:
+    project: true
+    patch: true
+    changes: false
+
+parsers:
+  gcov:
+    branch_detection:
+      conditional: yes
+      loop: yes
+      method: no
+      macro: no
+
+comment: false

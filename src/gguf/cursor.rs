@@ -137,9 +137,9 @@ impl<'a> GgufCursor<'a> {
             VT_U64 => self.read_u64(),
             VT_I64 => Ok(self.read_i64()? as u64),
             VT_BOOL => Ok(self.read_u8()? as u64),
-            other => Err(self.unsupported(format!(
-                "expected numeric GGUF value, got type {other}"
-            ))),
+            other => {
+                Err(self.unsupported(format!("expected numeric GGUF value, got type {other}")))
+            }
         }
     }
 

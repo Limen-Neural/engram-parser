@@ -178,9 +178,8 @@ impl Tensor {
         }
         // SAFETY: dtype, length, and alignment all checked above; lifetime
         // is tied to the input slice which borrows the owning layout.
-        let slice = unsafe {
-            std::slice::from_raw_parts(bytes.as_ptr() as *const f32, self.n_elements)
-        };
+        let slice =
+            unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const f32, self.n_elements) };
         Ok(slice)
     }
 
@@ -210,9 +209,8 @@ impl Tensor {
             });
         }
         // SAFETY: dtype, length, and alignment checked above.
-        let slice = unsafe {
-            std::slice::from_raw_parts(bytes.as_ptr() as *const u16, self.n_elements)
-        };
+        let slice =
+            unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const u16, self.n_elements) };
         Ok(slice)
     }
 
