@@ -1,0 +1,6 @@
+# Ignore junk for Docker builds (helps with the duplicated layout issue)
+engram-parser/
+target/
+**/.git
+**/*.rs.bk
+Cargo.lock  # will be copied explicitly if needed, but manifests are first
