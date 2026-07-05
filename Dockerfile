@@ -40,8 +40,8 @@ COPY . .
 # Note: we build the lib + run tests in CI job; here we just ensure it builds
 RUN cargo build --release --all-features
 
-# Runtime / verification stage (minimal)
-FROM debian:stable-slim AS runtime
+# Runtime / verification stage (cargo available for local verification)
+FROM rust:${RUST_VERSION}-slim AS runtime
 
 RUN useradd -m -u 10001 appuser
 
