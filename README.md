@@ -84,6 +84,33 @@ cargo test --all-features
 cargo llvm-cov --lib --all-features --locked --lcov --output-path lcov.info
 ```
 
+### Repository layout hygiene
+
+- Keep the repo single-root and workspace-clean (no duplicated crate roots / nested copies of the repo).
+- Do not commit generated artifacts; CI expects the working tree to remain clean after build/test.
+- If you add tools that generate files (e.g. coverage reports), ensure outputs are either ignored or cleaned up.
+
+## Docker
+
+The CI workflow publishes an image to GHCR on pushes to `main`:
+
+- Image: `ghcr.io/limen-neural/engram-parser`
+- Tags: `main` and the commit SHA
+
+```bash
+# Pull the published image
+docker pull ghcr.io/limen-neural/engram-parser:main
+
+# Run a verification command in the container
+docker run --rm ghcr.io/limen-neural/engram-parser:main cargo test --all-features
+
+# Build locally
+docker build -t engram-parser:local .
+
+# Run locally-built image
+docker run --rm engram-parser:local cargo --version
+```
+
 ## CI
 
 - GitHub Actions: `.github/workflows/ci.yml` (harden in progress via #11; uses Codecov per https://about.codecov.io/language/rust/ )
