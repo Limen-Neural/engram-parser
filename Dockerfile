@@ -33,6 +33,8 @@ COPY . .
 RUN cargo build --release --all-features && \
     cargo test --release --all-features
 
+RUN chown -R appuser:appuser /app
+
 USER appuser
 
 CMD ["cargo", "test", "--all-features"]
