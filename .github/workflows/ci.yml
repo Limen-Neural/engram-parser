@@ -9,8 +9,8 @@ on:
     - cron: '0 0 * * *'  # Run daily at midnight
 
 concurrency:
-  group: ci-cpu-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-cpu-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
