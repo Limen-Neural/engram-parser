@@ -60,7 +60,7 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: Generate coverage report
-        run: cargo llvm-cov --lib --all-features --locked --lcov --output-path lcov.info
+        run: cargo llvm-cov --all-targets --all-features --locked --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
         if: ${{ env.CODECOV_TOKEN != '' }}

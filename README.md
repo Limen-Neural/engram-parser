@@ -121,7 +121,7 @@ cargo build --all-features
 cargo test --all-features
 
 # Coverage (local; requires cargo-llvm-cov: cargo install cargo-llvm-cov)
-cargo llvm-cov --lib --all-features --locked --lcov --output-path lcov.info
+cargo llvm-cov --all-targets --all-features --locked --lcov --output-path lcov.info
 ```
 
 ## Docker
