@@ -127,12 +127,11 @@ cargo llvm-cov --lib --all-features --locked --lcov --output-path lcov.info
 ## Docker
 
 ```bash
-# Build the image locally
+# Build the image locally (includes build + test verification)
 docker build -t engram-parser .
 
-# Build only the builder stage (for running tests)
-docker build --target builder -t engram-parser-builder .
-docker run --rm engram-parser-builder cargo test --all-features
+# Run tests in the container
+docker run --rm engram-parser
 
 # Pull from GHCR (published on merges to main)
 docker pull ghcr.io/limen-neural/engram-parser:main
