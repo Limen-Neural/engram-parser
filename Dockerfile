@@ -12,7 +12,7 @@
 # Follows corinth-canal patterns adapted for CPU-only / no CUDA.
 # Avoids A && B || C anti-pattern (Codacy warning) by using explicit grouping or separate RUNs.
 
-ARG RUST_VERSION=1.85
+ARG RUST_VERSION=1.87
 
 # Builder stage: compile with all features for verification
 FROM rust:${RUST_VERSION}-slim AS builder
