@@ -32,10 +32,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
         with:
-          components: clippy, rustfmt
-
-      - name: Install components (rustfmt, clippy, llvm-tools)
-        run: rustup component add rustfmt clippy llvm-tools-preview
+          components: clippy, rustfmt, llvm-tools-preview
 
       # Swatinem/rust-cache@v2 (adopted from corinth-canal for better caching)
       - name: Cache Cargo + target

@@ -19,25 +19,13 @@ FROM rust:${RUST_VERSION}-slim AS builder
 
 WORKDIR /app
 
-# System deps for Rust (minimal for this zero-dep crate)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config \
-    libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy manifests first for better layer caching
+# Copy manifests and lock file for reproducibility
 COPY Cargo.toml Cargo.lock ./
 
-# Create dummy main to cache deps (since no [[bin]] by default, use the lib + test)
-RUN mkdir src && echo "fn main() {}" > src/main.rs && \
-    cargo build --release --all-features && \
-    rm -rf src
-
-# Now copy real source
+# Copy source
 COPY . .
 
-# Build (this layer will be cached on source changes only)
-# Note: we build the lib + run tests in CI job; here we just ensure it builds
+# Build the crate (zero external deps, no system packages needed)
 RUN cargo build --release --all-features
 
 # Runtime / verification stage (minimal)
@@ -47,13 +35,10 @@ RUN useradd -m -u 10001 appuser
 
 WORKDIR /app
 
-# Copy the built artifacts (for if we expose a binary later, e.g. gguf_smoke)
-COPY --from=builder /app/target/release /app/target/release
-
-# For library use, the image mainly serves as a reproducible build env.
-# You can also cargo install or use as base for downstream.
+# Copy only the compiled library artifact (not the entire target/release tree)
+COPY --from=builder /app/target/release/libengram_parser.rlib /app/lib/
 
 USER appuser
 
-# Default: show help if a binary is present; otherwise this is a build image
-CMD ["cargo", "--version"]
+# Library crate with no binary target; default to a no-op informational message.
+CMD ["echo", "engram-parser: use as base image or override CMD"]
