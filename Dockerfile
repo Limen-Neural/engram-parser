@@ -37,4 +37,4 @@ RUN chown -R appuser:appuser /app
 
 USER appuser
 
-CMD ["cargo", "test", "--all-features"]
+CMD ["cargo", "test", "--release", "--all-features"]
