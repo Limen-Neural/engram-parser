@@ -35,14 +35,20 @@ jobs:
 
       - name: Set Docker tags
         id: tags
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          PR_NUMBER: ${{ github.event.number }}
+          COMMIT_SHA: ${{ github.sha }}
+          REPO_RAW: ${{ github.repository }}
         run: |
-          REPO="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
-          TAGS="${REPO}:${{ github.sha }}"
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          REPO="ghcr.io/$(echo "$REPO_RAW" | tr '[:upper:]' '[:lower:]')"
+          TAGS="${REPO}:${COMMIT_SHA}"
+          if [ "$EVENT_NAME" = "push" ] && [ "$REF" = "refs/heads/main" ]; then
             TAGS="$TAGS,${REPO}:main"
           fi
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            TAGS="$TAGS,${REPO}:pr-${{ github.event.number }}"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            TAGS="$TAGS,${REPO}:pr-${PR_NUMBER}"
           fi
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
 
