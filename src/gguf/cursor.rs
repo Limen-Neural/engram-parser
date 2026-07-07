@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Streaming cursor over the raw GGUF byte stream.
 //!
 //! Only what the parser needs: little-endian scalar reads, length-prefixed
@@ -86,16 +88,18 @@ impl<'a> GgufCursor<'a> {
 
     pub(crate) fn read_u32(&mut self) -> Result<u32> {
         let bytes = self.read_exact(4)?;
-        Ok(u32::from_le_bytes(
-            bytes.try_into().expect("slice length is 4"),
-        ))
+        let arr: [u8; 4] = bytes
+            .try_into()
+            .map_err(|_| self.unsupported("expected 4-byte u32 payload".into()))?;
+        Ok(u32::from_le_bytes(arr))
     }
 
     pub(crate) fn read_u64(&mut self) -> Result<u64> {
         let bytes = self.read_exact(8)?;
-        Ok(u64::from_le_bytes(
-            bytes.try_into().expect("slice length is 8"),
-        ))
+        let arr: [u8; 8] = bytes
+            .try_into()
+            .map_err(|_| self.unsupported("expected 8-byte u64 payload".into()))?;
+        Ok(u64::from_le_bytes(arr))
     }
 
     pub(crate) fn read_i16(&mut self) -> Result<i16> {
@@ -128,19 +132,47 @@ impl<'a> GgufCursor<'a> {
     /// Read a numeric-typed GGUF value and coerce it to `u64`.
     pub(crate) fn read_numeric_as_u64(&mut self, value_type: u32) -> Result<u64> {
         match value_type {
-            VT_U8 => Ok(self.read_u8()? as u64),
-            VT_I8 => Ok(self.read_u8()? as i8 as i64 as u64),
-            VT_U16 => Ok(self.read_u16()? as u64),
-            VT_I16 => Ok(self.read_i16()? as i64 as u64),
-            VT_U32 => Ok(self.read_u32()? as u64),
-            VT_I32 => Ok(self.read_i32()? as i64 as u64),
+            VT_U8 => self.read_u8_as_u64(),
+            VT_I8 => self.read_i8_as_u64(),
+            VT_U16 => self.read_u16_as_u64(),
+            VT_I16 => self.read_i16_as_u64(),
+            VT_U32 => self.read_u32_as_u64(),
+            VT_I32 => self.read_i32_as_u64(),
             VT_U64 => self.read_u64(),
-            VT_I64 => Ok(self.read_i64()? as u64),
-            VT_BOOL => Ok(self.read_u8()? as u64),
+            VT_I64 => self.read_i64_as_u64(),
+            VT_BOOL => self.read_u8_as_u64(),
             other => {
                 Err(self.unsupported(format!("expected numeric GGUF value, got type {other}")))
             }
         }
+    }
+
+    fn read_u8_as_u64(&mut self) -> Result<u64> {
+        Ok(self.read_u8()? as u64)
+    }
+
+    fn read_i8_as_u64(&mut self) -> Result<u64> {
+        Ok(self.read_u8()? as i8 as i64 as u64)
+    }
+
+    fn read_u16_as_u64(&mut self) -> Result<u64> {
+        Ok(self.read_u16()? as u64)
+    }
+
+    fn read_i16_as_u64(&mut self) -> Result<u64> {
+        Ok(self.read_i16()? as i64 as u64)
+    }
+
+    fn read_u32_as_u64(&mut self) -> Result<u64> {
+        Ok(self.read_u32()? as u64)
+    }
+
+    fn read_i32_as_u64(&mut self) -> Result<u64> {
+        Ok(self.read_i32()? as i64 as u64)
+    }
+
+    fn read_i64_as_u64(&mut self) -> Result<u64> {
+        Ok(self.read_i64()? as u64)
     }
 
     /// Read a numeric-typed GGUF value and coerce it to `usize`.
@@ -180,16 +212,19 @@ impl<'a> GgufCursor<'a> {
             VT_STRING => {
                 let _ = self.read_string()?;
             }
-            VT_ARRAY => {
-                let nested = self.read_u32()?;
-                let len = self.read_u64()? as usize;
-                for _ in 0..len {
-                    self.skip_value(nested)?;
-                }
-            }
+            VT_ARRAY => self.skip_array_value()?,
             other => {
                 return Err(self.unsupported(format!("unsupported GGUF value type {other}")));
             }
+        }
+        Ok(())
+    }
+
+    fn skip_array_value(&mut self) -> Result<()> {
+        let nested = self.read_u32()?;
+        let len = self.read_u64()? as usize;
+        for _ in 0..len {
+            self.skip_value(nested)?;
         }
         Ok(())
     }

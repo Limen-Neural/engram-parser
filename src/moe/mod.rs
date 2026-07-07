@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Mixture-of-Experts weight extraction.
 //!
 //! Locates MoE expert tensors inside a parsed [`GgufLayout`](crate::gguf::GgufLayout)

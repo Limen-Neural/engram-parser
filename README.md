@@ -1,5 +1,8 @@
 # engram-parser
 
+[![CI](https://github.com/Limen-Neural/engram-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/Limen-Neural/engram-parser/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+
 Pure-Rust, **zero-dependency** `.gguf` deserializer and
 Mixture-of-Experts per-expert weight extractor.
 
@@ -20,6 +23,43 @@ Mixture-of-Experts per-expert weight extractor.
   conversion is available as an optional helper only.
 - No CUDA, no GPU, no SIMD.
 - No runtime dependencies. `[dependencies]` is intentionally empty.
+
+## Scope / Boundaries
+
+This crate **owns**:
+
+- GGUF v3 deserialization (header, KV metadata, tensor directory).
+- MoE expert enumeration (`list_experts`).
+- Per-expert raw weight extraction (`extract_expert` — gate/up/down byte
+  buffers with shape and dtype metadata).
+- Zero-dependency, layout-aware dtype handling (F32/F16/BF16 plus opaque
+  quant types as raw bytes).
+
+This crate **does not own**:
+
+- Neural-network math (matmul, forward, routing, softmax, dequantization
+  in the default build).
+- CUDA/GPU/SIMD execution.
+- Tokenization, inference orchestration, or SNN dynamics.
+- Full checkpoint routing or model-family adapters (see
+  [`cortex-tensor`](https://github.com/Limen-Neural/cortex-tensor)).
+
+**Allowed dependencies:** none — `[dependencies]` stays empty.
+
+**Forbidden dependencies:** inference engines, GPU backends, domain-specific
+adapters.
+
+| Crate | Role |
+|-------|------|
+| `engram-parser` | GGUF parse + per-expert weight extraction |
+| [`cortex-tensor`](https://github.com/Limen-Neural/cortex-tensor) | Tensor math + MoE routing on extracted weights |
+| [`hybrid-fusion`](https://github.com/Limen-Neural/hybrid-fusion) | ANN→SNN orchestration |
+| [`neuromod`](https://github.com/Limen-Neural/neuromod) | SNN neuron dynamics (downstream consumer) |
+
+See [LIM-9](https://linear.app/saaq-spiking-adaptive-activity/issue/LIM-9/plan-rust-runtime-and-deployment-repo-boundary-matrix)
+for the full Rust runtime/deployment boundary matrix and
+[issue #4](https://github.com/Limen-Neural/engram-parser/issues/4) for
+this repo's tracking issue.
 
 ## Quick start
 
@@ -65,7 +105,7 @@ Cross-links and updates performed when #10 was created.
 
 ## Development
 
-This is a pure-Rust, zero-dependency crate. All commands use `--all-features`.
+This is a pure-Rust, zero-dependency crate. Build, lint, and test commands use `--all-features`.
 
 ```bash
 # Format
@@ -80,13 +120,27 @@ cargo build --all-features
 # Test
 cargo test --all-features
 
-# Coverage (local; uses cargo-llvm-cov)
+# Coverage (local; requires cargo-llvm-cov: cargo install cargo-llvm-cov)
 cargo llvm-cov --lib --all-features --locked --lcov --output-path lcov.info
+```
+
+## Docker
+
+```bash
+# Build the image locally
+docker build -t engram-parser .
+
+# Build only the builder stage (for running tests)
+docker build --target builder -t engram-parser-builder .
+docker run --rm engram-parser-builder cargo test --all-features
+
+# Pull from GHCR (published on merges to main)
+docker pull ghcr.io/limen-neural/engram-parser:main
 ```
 
 ## CI
 
-- GitHub Actions: `.github/workflows/ci.yml` (harden in progress via #11; uses Codecov per https://about.codecov.io/language/rust/ )
+- GitHub Actions: `.github/workflows/ci.yml` (hardened via #11; uses Codecov per <https://about.codecov.io/language/rust/>)
 - Azure Pipelines: `azure-pipelines.yml` (tracked in #8 for cross-platform ubuntu/mac/windows)
 - Docker: `Dockerfile` + `.github/workflows/docker-build.yml` (tracked in #9 for GHCR reproducible builds; use user's Docker CLI for local verification)
 - Other CI/DX issues: #12 (security), #13 (releases on tags w/ sentry option), #14 (MSRV), #15 (Dependabot no auto-merge), #16 (layout clean)
@@ -94,3 +148,12 @@ cargo llvm-cov --lib --all-features --locked --lcov --output-path lcov.info
 See the issue bodies for full ACs and corinth-canal inspiration patterns (one-way copy only; no dep on corinth-canal).
 
 Cross-reference: #11, #8, #9, #7, #5, LIM-9.
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE-2.0](LICENSE-APACHE-2.0) or [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0))
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or [http://opensource.org/licenses/MIT](http://opensource.org/licenses/MIT))
+
+at your option.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Tensor directory entry + dtype enumeration.
 //!
 //! A [`Tensor`] is a pure metadata descriptor: name, shape, dtype, and
@@ -115,7 +117,7 @@ impl DType {
 }
 
 fn block_bytes(n_elements: usize, block_size: usize, block_bytes: usize) -> Option<usize> {
-    if n_elements % block_size != 0 {
+    if !n_elements.is_multiple_of(block_size) {
         return None;
     }
     (n_elements / block_size).checked_mul(block_bytes)
@@ -149,15 +151,13 @@ pub struct Tensor {
 }
 
 impl Tensor {
-    /// Reinterpret the tensor's payload as a `&[f32]` slice.
-    ///
-    /// Returns an error if the dtype is not `F32` or if alignment /
-    /// length invariants are violated.
-    pub fn as_f32_slice<'a>(&self, bytes: &'a [u8]) -> Result<&'a [f32]> {
+    /// Decode F32 tensor bytes into a `Vec<f32>` using little-endian
+    /// chunk parsing (no `unsafe` reinterpretation).
+    pub fn read_f32_values(&self, bytes: &[u8]) -> Result<Vec<f32>> {
         if self.dtype != DType::F32 {
             return Err(ParserError::UnsupportedFormat {
                 path: self.name.clone(),
-                reason: format!("as_f32_slice called on dtype {:?}", self.dtype),
+                reason: format!("read_f32_values called on dtype {:?}", self.dtype),
             });
         }
         if bytes.len() != self.n_elements * 4 {
@@ -170,26 +170,19 @@ impl Tensor {
                 ),
             });
         }
-        if bytes.as_ptr() as usize % std::mem::align_of::<f32>() != 0 {
-            return Err(ParserError::InvalidLayout {
-                path: self.name.clone(),
-                reason: "f32 tensor payload is not 4-byte aligned".into(),
-            });
-        }
-        // SAFETY: dtype, length, and alignment all checked above; lifetime
-        // is tied to the input slice which borrows the owning layout.
-        let slice =
-            unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const f32, self.n_elements) };
-        Ok(slice)
+        Ok(bytes
+            .chunks_exact(4)
+            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect())
     }
 
-    /// Reinterpret the tensor's payload as a `&[u16]` slice of raw F16
-    /// or BF16 bits (no conversion performed).
-    pub fn as_u16_bits<'a>(&self, bytes: &'a [u8]) -> Result<&'a [u16]> {
+    /// Decode F16/BF16 tensor bytes into raw `u16` lane values using
+    /// little-endian chunk parsing (no numeric conversion).
+    pub fn read_u16_values(&self, bytes: &[u8]) -> Result<Vec<u16>> {
         if !matches!(self.dtype, DType::F16 | DType::BF16) {
             return Err(ParserError::UnsupportedFormat {
                 path: self.name.clone(),
-                reason: format!("as_u16_bits called on dtype {:?}", self.dtype),
+                reason: format!("read_u16_values called on dtype {:?}", self.dtype),
             });
         }
         if bytes.len() != self.n_elements * 2 {
@@ -202,16 +195,10 @@ impl Tensor {
                 ),
             });
         }
-        if bytes.as_ptr() as usize % std::mem::align_of::<u16>() != 0 {
-            return Err(ParserError::InvalidLayout {
-                path: self.name.clone(),
-                reason: "16-bit tensor payload is not 2-byte aligned".into(),
-            });
-        }
-        // SAFETY: dtype, length, and alignment checked above.
-        let slice =
-            unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const u16, self.n_elements) };
-        Ok(slice)
+        Ok(bytes
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect())
     }
 
     /// Decode an F16 tensor into a newly-allocated `Vec<f32>`. The only
@@ -248,12 +235,13 @@ pub fn f16_bits_to_f32(bits: u16) -> f32 {
     let sign = ((bits as u32) & 0x8000) << 16;
     let exp = ((bits as u32) & 0x7C00) >> 10;
     let mant = ((bits as u32) & 0x03FF) << 13;
-    let val = if exp == 0 {
-        mant
-    } else if exp == 31 {
-        0x7F800000 | mant
-    } else {
-        ((exp + 127 - 15) << 23) | mant
-    };
-    f32::from_bits(sign | val)
+    f32::from_bits(sign | f16_payload_bits(exp, mant))
+}
+
+fn f16_payload_bits(exp: u32, mant: u32) -> u32 {
+    match exp {
+        0 => mant,
+        31 => 0x7F800000 | mant,
+        biased => ((biased + 127 - 15) << 23) | mant,
+    }
 }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Parsed GGUF file layout: metadata KV store + tensor directory.
 //!
 //! This module is file-agnostic: it operates on an already-loaded
@@ -7,9 +9,7 @@
 
 use std::collections::HashMap;
 
-use super::cursor::{
-    GGUF_MAGIC, GGUF_VERSION, GgufCursor, VT_ARRAY, VT_STRING, invalid_layout, unsupported,
-};
+use super::cursor::{GGUF_MAGIC, GGUF_VERSION, GgufCursor, VT_STRING, invalid_layout, unsupported};
 use super::tensor::{DType, Tensor};
 use crate::error::{ParserError, Result};
 
@@ -121,6 +121,11 @@ impl GgufLayout {
     }
 }
 
+struct LayoutHeader {
+    tensor_count: usize,
+    kv_count: usize,
+}
+
 /// Parse the GGUF header + KV metadata + tensor directory out of a
 /// byte slice. Does not validate payload bytes, only directory offsets.
 pub(crate) fn parse_layout(
@@ -128,7 +133,24 @@ pub(crate) fn parse_layout(
     path: &str,
 ) -> Result<(GgufMetadata, HashMap<String, Tensor>, usize, usize)> {
     let mut cursor = GgufCursor::new(bytes, path);
+    let header = read_layout_header(&mut cursor, path)?;
+    let (alignment, metadata) = read_metadata_section(&mut cursor, header.kv_count)?;
+    let mut tensors = read_tensor_directory(&mut cursor, path, header.tensor_count)?;
+    let tensor_data_offset = finalize_tensor_offsets(&mut tensors, cursor.offset(), alignment);
+    Ok((metadata, tensors, alignment, tensor_data_offset))
+}
 
+fn read_layout_header(cursor: &mut GgufCursor<'_>, path: &str) -> Result<LayoutHeader> {
+    validate_gguf_header(cursor, path)?;
+    let tensor_count = bounded_count(cursor.read_u64()?, MAX_TENSOR_COUNT, "tensor_count", path)?;
+    let kv_count = bounded_count(cursor.read_u64()?, MAX_KV_COUNT, "kv_count", path)?;
+    Ok(LayoutHeader {
+        tensor_count,
+        kv_count,
+    })
+}
+
+fn validate_gguf_header(cursor: &mut GgufCursor<'_>, path: &str) -> Result<()> {
     let magic = cursor.read_exact(4)?;
     if magic != GGUF_MAGIC {
         return Err(unsupported(
@@ -145,94 +167,122 @@ pub(crate) fn parse_layout(
         ));
     }
 
-    let tensor_count_raw = cursor.read_u64()?;
-    if tensor_count_raw > MAX_TENSOR_COUNT {
+    Ok(())
+}
+
+fn bounded_count(raw: u64, limit: u64, label: &str, path: &str) -> Result<usize> {
+    if raw > limit {
         return Err(unsupported(
             path,
-            format!("tensor_count {tensor_count_raw} exceeds sanity limit {MAX_TENSOR_COUNT}"),
+            format!("{label} {raw} exceeds sanity limit {limit}"),
         ));
     }
-    let tensor_count = tensor_count_raw as usize;
+    Ok(raw as usize)
+}
 
-    let kv_count_raw = cursor.read_u64()?;
-    if kv_count_raw > MAX_KV_COUNT {
-        return Err(unsupported(
-            path,
-            format!("kv_count {kv_count_raw} exceeds sanity limit {MAX_KV_COUNT}"),
-        ));
-    }
-    let kv_count = kv_count_raw as usize;
-
+fn read_metadata_section(
+    cursor: &mut GgufCursor<'_>,
+    kv_count: usize,
+) -> Result<(usize, GgufMetadata)> {
     let mut alignment: usize = 32;
     let mut metadata = GgufMetadata::default();
 
     for _ in 0..kv_count {
         let key = cursor.read_string()?;
         let value_type = cursor.read_u32()?;
-        match key.as_str() {
-            "general.alignment" => {
-                alignment = cursor.read_numeric_as_usize(value_type)?.max(1);
-            }
-            _ => {
-                capture_kv(&mut cursor, &mut metadata, key, value_type)?;
-            }
+        if key == "general.alignment" {
+            alignment = cursor.read_numeric_as_usize(value_type)?.max(1);
+        } else {
+            capture_kv(cursor, &mut metadata, key, value_type)?;
         }
     }
 
+    Ok((alignment, metadata))
+}
+
+fn read_tensor_directory(
+    cursor: &mut GgufCursor<'_>,
+    path: &str,
+    tensor_count: usize,
+) -> Result<HashMap<String, Tensor>> {
     let mut tensors = HashMap::with_capacity(tensor_count);
     for _ in 0..tensor_count {
-        let name = cursor.read_string()?;
-        let n_dims_raw = cursor.read_u32()? as usize;
-        if n_dims_raw > MAX_TENSOR_DIMS {
-            return Err(unsupported(
-                path,
-                format!("tensor '{name}' has {n_dims_raw} dims; max {MAX_TENSOR_DIMS}"),
-            ));
-        }
-        let mut dims = Vec::with_capacity(n_dims_raw);
-        for _ in 0..n_dims_raw {
-            dims.push(cursor.read_u64()? as usize);
-        }
-        let ggml_type = cursor.read_u32()?;
-        let relative_offset = cursor.read_u64()? as usize;
-        let dtype = DType::from_ggml_type(ggml_type);
+        let tensor = read_tensor_entry(cursor, path)?;
+        tensors.insert(tensor.name.clone(), tensor);
+    }
+    Ok(tensors)
+}
 
-        let n_elements = dims
-            .iter()
-            .try_fold(1usize, |acc, &d| acc.checked_mul(d))
-            .ok_or_else(|| {
-                invalid_layout(path, format!("tensor '{name}' element count overflow"))
-            })?;
-        let byte_len = dtype.byte_len_for_elements(n_elements).ok_or_else(|| {
-            invalid_layout(
-                path,
-                format!(
-                    "tensor '{name}' (ggml_type={ggml_type}) has unknown byte-length for {n_elements} elements",
-                ),
-            )
-        })?;
+fn read_tensor_entry(cursor: &mut GgufCursor<'_>, path: &str) -> Result<Tensor> {
+    let name = cursor.read_string()?;
+    let dims = read_tensor_dims(cursor, path, &name)?;
+    let ggml_type = cursor.read_u32()?;
+    let relative_offset = cursor.read_u64()? as usize;
+    let dtype = DType::from_ggml_type(ggml_type);
+    let n_elements = tensor_element_count(&dims, &name, path)?;
+    let byte_len = tensor_byte_len(dtype, ggml_type, n_elements, &name, path)?;
 
-        tensors.insert(
-            name.clone(),
-            Tensor {
-                name,
-                dims,
-                dtype,
-                ggml_type,
-                n_elements,
-                byte_len,
-                relative_offset,
-                absolute_offset: 0,
-            },
-        );
+    Ok(Tensor {
+        name,
+        dims,
+        dtype,
+        ggml_type,
+        n_elements,
+        byte_len,
+        relative_offset,
+        absolute_offset: 0,
+    })
+}
+
+fn read_tensor_dims(cursor: &mut GgufCursor<'_>, path: &str, name: &str) -> Result<Vec<usize>> {
+    let n_dims_raw = cursor.read_u32()? as usize;
+    if n_dims_raw > MAX_TENSOR_DIMS {
+        return Err(unsupported(
+            path,
+            format!("tensor '{name}' has {n_dims_raw} dims; max {MAX_TENSOR_DIMS}"),
+        ));
     }
 
-    let tensor_data_offset = align_up(cursor.offset(), alignment);
+    let mut dims = Vec::with_capacity(n_dims_raw);
+    for _ in 0..n_dims_raw {
+        dims.push(cursor.read_u64()? as usize);
+    }
+    Ok(dims)
+}
+
+fn tensor_element_count(dims: &[usize], name: &str, path: &str) -> Result<usize> {
+    dims.iter()
+        .try_fold(1usize, |acc, &d| acc.checked_mul(d))
+        .ok_or_else(|| invalid_layout(path, format!("tensor '{name}' element count overflow")))
+}
+
+fn tensor_byte_len(
+    dtype: DType,
+    ggml_type: u32,
+    n_elements: usize,
+    name: &str,
+    path: &str,
+) -> Result<usize> {
+    dtype.byte_len_for_elements(n_elements).ok_or_else(|| {
+        invalid_layout(
+            path,
+            format!(
+                "tensor '{name}' (ggml_type={ggml_type}) has unknown byte-length for {n_elements} elements",
+            ),
+        )
+    })
+}
+
+fn finalize_tensor_offsets(
+    tensors: &mut HashMap<String, Tensor>,
+    cursor_offset: usize,
+    alignment: usize,
+) -> usize {
+    let tensor_data_offset = align_up(cursor_offset, alignment);
     for tensor in tensors.values_mut() {
         tensor.absolute_offset = tensor_data_offset + tensor.relative_offset;
     }
-
-    Ok((metadata, tensors, alignment, tensor_data_offset))
+    tensor_data_offset
 }
 
 fn capture_kv(
@@ -246,29 +296,58 @@ fn capture_kv(
     };
     match value_type {
         VT_U8 | VT_I8 | VT_U16 | VT_I16 | VT_U32 | VT_I32 | VT_U64 | VT_I64 | VT_BOOL => {
-            let v = cursor.read_numeric_as_u64(value_type)?;
-            metadata.numerics.insert(key, v);
+            capture_numeric_kv(cursor, metadata, key, value_type)
         }
-        VT_F32 => {
-            let v = cursor.read_f32()?;
-            metadata.floats_32.insert(key, v);
-        }
-        VT_F64 => {
-            let v = cursor.read_f64()?;
-            metadata.floats_64.insert(key, v);
-        }
-        VT_STRING => {
-            let v = cursor.read_string()?;
-            metadata.strings.insert(key, v);
-        }
-        VT_ARRAY => {
-            cursor.skip_value(value_type)?;
-        }
-        _ => {
-            cursor.skip_value(value_type)?;
-        }
+        VT_F32 => capture_f32_kv(cursor, metadata, key),
+        VT_F64 => capture_f64_kv(cursor, metadata, key),
+        VT_STRING => capture_string_kv(cursor, metadata, key),
+        _ => capture_skipped_kv(cursor, value_type),
     }
+}
+
+fn capture_numeric_kv(
+    cursor: &mut GgufCursor<'_>,
+    metadata: &mut GgufMetadata,
+    key: String,
+    value_type: u32,
+) -> Result<()> {
+    let v = cursor.read_numeric_as_u64(value_type)?;
+    metadata.numerics.insert(key, v);
     Ok(())
+}
+
+fn capture_f32_kv(
+    cursor: &mut GgufCursor<'_>,
+    metadata: &mut GgufMetadata,
+    key: String,
+) -> Result<()> {
+    let v = cursor.read_f32()?;
+    metadata.floats_32.insert(key, v);
+    Ok(())
+}
+
+fn capture_f64_kv(
+    cursor: &mut GgufCursor<'_>,
+    metadata: &mut GgufMetadata,
+    key: String,
+) -> Result<()> {
+    let v = cursor.read_f64()?;
+    metadata.floats_64.insert(key, v);
+    Ok(())
+}
+
+fn capture_string_kv(
+    cursor: &mut GgufCursor<'_>,
+    metadata: &mut GgufMetadata,
+    key: String,
+) -> Result<()> {
+    let v = cursor.read_string()?;
+    metadata.strings.insert(key, v);
+    Ok(())
+}
+
+fn capture_skipped_kv(cursor: &mut GgufCursor<'_>, value_type: u32) -> Result<()> {
+    cursor.skip_value(value_type)
 }
 
 fn align_up(value: usize, alignment: usize) -> usize {
