@@ -202,7 +202,12 @@ fn stacked_slice_range(
             path: layout.path.clone(),
             reason: format!("stacked stride overflow for tensor '{}'", tensor.name),
         })?;
-    let end = start + stride;
+    let end = start
+        .checked_add(stride)
+        .ok_or_else(|| ParserError::InvalidLayout {
+            path: layout.path.clone(),
+            reason: format!("stacked end overflow for tensor '{}'", tensor.name),
+        })?;
     if end > buffer_len {
         return Err(ParserError::InvalidLayout {
             path: layout.path.clone(),
