@@ -13,12 +13,5 @@ coverage:
     patch: true
     changes: false
 
-parsers:
-  gcov:
-    branch_detection:
-      conditional: yes
-      loop: yes
-      method: no
-      macro: no
-
+# CI generates lcov format (cargo llvm-cov --lcov); no gcov parser needed.
 comment: false
