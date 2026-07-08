@@ -10,7 +10,7 @@ on:
 
 concurrency:
   group: docker-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -38,7 +38,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF: ${{ github.ref }}
           PR_NUMBER: ${{ github.event.number }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           REPO_RAW: ${{ github.repository }}
         run: |
           REPO="ghcr.io/$(echo "$REPO_RAW" | tr '[:upper:]' '[:lower:]')"

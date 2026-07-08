@@ -26,6 +26,10 @@ WORKDIR /app
 # Copy manifests and lock file for reproducibility
 COPY Cargo.toml Cargo.lock ./
 
+# Pre-fetch dependencies (no-op for zero-deps today, enables layer caching
+# when dependencies are added in the future)
+RUN cargo fetch
+
 # Copy source
 COPY . .
 
