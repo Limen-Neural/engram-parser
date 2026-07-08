@@ -1,3 +1,5 @@
 /target
 /Cargo.lock.bak
 **/*.rs.bk
+.mimocode/
+engram-parser/

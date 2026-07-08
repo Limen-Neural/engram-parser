@@ -1,0 +1,5 @@
+# Ignore junk for Docker builds (helps with the duplicated layout issue)
+engram-parser/
+target/
+**/.git
+**/*.rs.bk

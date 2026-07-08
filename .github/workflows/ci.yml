@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight
+
+concurrency:
+  group: ci-cpu-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    steps:
+      # actions/checkout@v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      # dtolnay/rust-toolchain@stable
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          components: clippy, rustfmt, llvm-tools-preview
+
+      # Swatinem/rust-cache@v2 (adopted from corinth-canal for better caching)
+      - name: Cache Cargo + target
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          shared-key: "cpu-ci-v1"
+          cache-on-failure: true
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy (lint)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build
+        run: cargo build --all-features
+
+      - name: Test
+        run: cargo test --all-features
+
+      # Verify build/test leaves no unexpected artifacts (clean-tree guard per qodo review)
+      - name: Check working tree is clean
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "❌ Working tree has unexpected changes after build+test:"
+            git status --short
+            exit 1
+          fi
+          echo "✅ Working tree is clean"
+
+      # Coverage using Codecov (per review: "We will use codecov https://about.codecov.io/language/rust/")
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Generate coverage report
+        run: cargo llvm-cov --all-targets --all-features --locked --lcov --output-path lcov.info
+
+      - name: Upload coverage to Codecov
+        if: ${{ env.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@04b047e8bb82a0c002c8312c1c880fbc6a999d45 # v5
+        with:
+          token: ${{ env.CODECOV_TOKEN }}
+          files: lcov.info
+          fail_ci_if_error: false
+          verbose: true

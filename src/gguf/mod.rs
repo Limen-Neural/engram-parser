@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! GGUF file format: header + metadata + tensor directory.
 //!
 //! Entry point: [`load_gguf`] reads a `.gguf` file into a [`GgufLayout`]

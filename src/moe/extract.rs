@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Per-expert weight extraction from a parsed [`GgufLayout`].
 //!
 //! Two on-disk conventions are supported:
@@ -27,19 +29,25 @@ pub fn list_experts(layout: &GgufLayout) -> Vec<(usize, usize)> {
     let mut pairs: BTreeSet<(usize, usize)> = BTreeSet::new();
 
     for tensor in layout.tensors.values() {
-        if let Some((block, role)) = parse_stacked_name(&tensor.name) {
-            let _ = role;
-            if let Some(n_experts) = stacked_expert_count(tensor) {
-                for e in 0..n_experts {
-                    pairs.insert((block, e));
-                }
-            }
-        } else if let Some((block, _role, expert)) = parse_per_expert_name(&tensor.name) {
-            pairs.insert((block, expert));
-        }
+        record_expert_pairs(tensor, &mut pairs);
     }
 
     pairs.into_iter().collect()
+}
+
+fn record_expert_pairs(tensor: &Tensor, pairs: &mut BTreeSet<(usize, usize)>) {
+    if let Some((block, _role)) = parse_stacked_name(&tensor.name) {
+        if let Some(n_experts) = stacked_expert_count(tensor) {
+            for expert in 0..n_experts {
+                pairs.insert((block, expert));
+            }
+        }
+        return;
+    }
+
+    if let Some((block, _role, expert)) = parse_per_expert_name(&tensor.name) {
+        pairs.insert((block, expert));
+    }
 }
 
 /// Extract the raw weights for a single `(block, expert)` pair.
@@ -82,7 +90,7 @@ fn extract_role(
     // Prefer the stacked convention first.
     let stacked_name = format!("blk.{block}.ffn_{role}_exps.weight");
     if let Some(tensor) = layout.tensors.get(&stacked_name) {
-        return Ok(Some(slice_stacked_expert(layout, tensor, expert)?));
+        return Ok(Some(slice_stacked_expert(layout, block, tensor, expert)?));
     }
 
     // Fall back to per-expert tensors. GGUF files in the wild use
@@ -117,9 +125,31 @@ fn extract_role(
 /// contiguously in the tensor buffer.
 fn slice_stacked_expert(
     layout: &GgufLayout,
+    block: usize,
     tensor: &Tensor,
     expert: usize,
 ) -> Result<RawTensor> {
+    let n_experts = validate_stacked_expert_count(layout, block, tensor, expert)?;
+    let bytes = layout.tensor_bytes(tensor)?;
+    let (start, end) = stacked_slice_range(layout, tensor, expert, n_experts, bytes.len())?;
+    let per_expert_dims: Vec<usize> = tensor.dims[..tensor.dims.len() - 1].to_vec();
+
+    Ok(RawTensor {
+        source_name: tensor.name.clone(),
+        dims: per_expert_dims,
+        dtype: tensor.dtype,
+        ggml_type: tensor.ggml_type,
+        bytes: bytes[start..end].to_vec(),
+        stacked_slice: true,
+    })
+}
+
+fn validate_stacked_expert_count(
+    layout: &GgufLayout,
+    block: usize,
+    tensor: &Tensor,
+    expert: usize,
+) -> Result<usize> {
     let n_experts = stacked_expert_count(tensor).ok_or_else(|| ParserError::InvalidLayout {
         path: layout.path.clone(),
         reason: format!(
@@ -130,16 +160,32 @@ fn slice_stacked_expert(
         ),
     })?;
 
+    if n_experts == 0 {
+        return Err(ParserError::InvalidLayout {
+            path: layout.path.clone(),
+            reason: format!("stacked tensor '{}' has zero experts", tensor.name),
+        });
+    }
+
     if expert >= n_experts {
         return Err(ParserError::ExpertOutOfRange {
-            block: 0,
+            block,
             expert,
             available: n_experts,
         });
     }
 
-    let bytes = layout.tensor_bytes(tensor)?;
-    if tensor.byte_len % n_experts != 0 {
+    Ok(n_experts)
+}
+
+fn stacked_slice_range(
+    layout: &GgufLayout,
+    tensor: &Tensor,
+    expert: usize,
+    n_experts: usize,
+    buffer_len: usize,
+) -> Result<(usize, usize)> {
+    if !tensor.byte_len.is_multiple_of(n_experts) {
         return Err(ParserError::InvalidLayout {
             path: layout.path.clone(),
             reason: format!(
@@ -148,35 +194,31 @@ fn slice_stacked_expert(
             ),
         });
     }
+
     let stride = tensor.byte_len / n_experts;
-    let start = expert.checked_mul(stride).ok_or_else(|| ParserError::InvalidLayout {
-        path: layout.path.clone(),
-        reason: format!("stacked stride overflow for tensor '{}'", tensor.name),
-    })?;
-    let end = start + stride;
-    if end > bytes.len() {
+    let start = expert
+        .checked_mul(stride)
+        .ok_or_else(|| ParserError::InvalidLayout {
+            path: layout.path.clone(),
+            reason: format!("stacked stride overflow for tensor '{}'", tensor.name),
+        })?;
+    let end = start
+        .checked_add(stride)
+        .ok_or_else(|| ParserError::InvalidLayout {
+            path: layout.path.clone(),
+            reason: format!("stacked end overflow for tensor '{}'", tensor.name),
+        })?;
+    if end > buffer_len {
         return Err(ParserError::InvalidLayout {
             path: layout.path.clone(),
             reason: format!(
-                "stacked slice range [{start}..{end}] for tensor '{}' exceeds buffer len {}",
+                "stacked slice range [{start}..{end}] for tensor '{}' exceeds buffer len {buffer_len}",
                 tensor.name,
-                bytes.len()
             ),
         });
     }
 
-    // Per-expert dims: drop the trailing expert axis.
-    let per_expert_dims: Vec<usize> = tensor.dims[..tensor.dims.len() - 1].to_vec();
-    let chunk = bytes[start..end].to_vec();
-
-    Ok(RawTensor {
-        source_name: tensor.name.clone(),
-        dims: per_expert_dims,
-        dtype: tensor.dtype,
-        ggml_type: tensor.ggml_type,
-        bytes: chunk,
-        stacked_slice: true,
-    })
+    Ok((start, end))
 }
 
 /// For a stacked MoE tensor, the expert axis is the outermost (last)
@@ -192,22 +234,33 @@ fn stacked_expert_count(tensor: &Tensor) -> Option<usize> {
 /// Parse a stacked MoE tensor name into `(block, role)`. Returns
 /// `None` if the name does not match the `blk.{B}.ffn_{role}_exps.weight`
 /// convention.
+const STACKED_NAME_SUFFIXES: &[(&str, &str)] = &[
+    ("ffn_gate_exps.weight", "gate"),
+    ("ffn_up_exps.weight", "up"),
+    ("ffn_down_exps.weight", "down"),
+];
+
 fn parse_stacked_name(name: &str) -> Option<(usize, &'static str)> {
     let rest = name.strip_prefix("blk.")?;
     let (block_str, tail) = rest.split_once('.')?;
     let block: usize = block_str.parse().ok()?;
 
-    let role = if tail == "ffn_gate_exps.weight" {
-        "gate"
-    } else if tail == "ffn_up_exps.weight" {
-        "up"
-    } else if tail == "ffn_down_exps.weight" {
-        "down"
-    } else {
-        return None;
-    };
-    Some((block, role))
+    for (suffix, role) in STACKED_NAME_SUFFIXES {
+        if tail == *suffix {
+            return Some((block, role));
+        }
+    }
+    None
 }
+
+const PER_EXPERT_NAME_PATTERNS: &[(&str, &str)] = &[
+    ("ffn_gate.", "gate"),
+    ("ffn_up.", "up"),
+    ("ffn_down.", "down"),
+    ("ffn_gate_", "gate"),
+    ("ffn_up_", "up"),
+    ("ffn_down_", "down"),
+];
 
 /// Parse a per-expert MoE tensor name into `(block, role, expert)`.
 /// Matches both `blk.B.ffn_ROLE.E.weight` and `blk.B.ffn_ROLE_E.weight`
@@ -217,27 +270,15 @@ fn parse_per_expert_name(name: &str) -> Option<(usize, &'static str, usize)> {
     let (block_str, tail) = rest.split_once('.')?;
     let block: usize = block_str.parse().ok()?;
 
-    for (prefix, role) in [
-        ("ffn_gate.", "gate"),
-        ("ffn_up.", "up"),
-        ("ffn_down.", "down"),
-    ] {
-        if let Some(sub) = tail.strip_prefix(prefix) {
-            let expert_str = sub.strip_suffix(".weight")?;
-            let expert: usize = expert_str.parse().ok()?;
-            return Some((block, role, expert));
-        }
-    }
-    for (prefix, role) in [
-        ("ffn_gate_", "gate"),
-        ("ffn_up_", "up"),
-        ("ffn_down_", "down"),
-    ] {
-        if let Some(sub) = tail.strip_prefix(prefix) {
-            let expert_str = sub.strip_suffix(".weight")?;
-            let expert: usize = expert_str.parse().ok()?;
+    for (prefix, role) in PER_EXPERT_NAME_PATTERNS {
+        if let Some(expert) = parse_expert_index(tail, prefix) {
             return Some((block, role, expert));
         }
     }
     None
+}
+
+fn parse_expert_index(tail: &str, prefix: &str) -> Option<usize> {
+    let sub = tail.strip_prefix(prefix)?;
+    sub.strip_suffix(".weight")?.parse().ok()
 }
