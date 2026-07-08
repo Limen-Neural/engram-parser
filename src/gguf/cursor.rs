@@ -24,19 +24,19 @@ pub(crate) fn invalid_layout(path: &str, reason: impl Into<String>) -> ParserErr
     }
 }
 
-pub(crate) const VT_U8: u32 = 0;
-pub(crate) const VT_I8: u32 = 1;
-pub(crate) const VT_U16: u32 = 2;
-pub(crate) const VT_I16: u32 = 3;
-pub(crate) const VT_U32: u32 = 4;
-pub(crate) const VT_I32: u32 = 5;
-pub(crate) const VT_F32: u32 = 6;
-pub(crate) const VT_BOOL: u32 = 7;
-pub(crate) const VT_STRING: u32 = 8;
-pub(crate) const VT_ARRAY: u32 = 9;
-pub(crate) const VT_U64: u32 = 10;
-pub(crate) const VT_I64: u32 = 11;
-pub(crate) const VT_F64: u32 = 12;
+pub const GGUF_VALUE_TYPE_UINT8: u32 = 0;
+pub const GGUF_VALUE_TYPE_INT8: u32 = 1;
+pub const GGUF_VALUE_TYPE_UINT16: u32 = 2;
+pub const GGUF_VALUE_TYPE_INT16: u32 = 3;
+pub const GGUF_VALUE_TYPE_UINT32: u32 = 4;
+pub const GGUF_VALUE_TYPE_INT32: u32 = 5;
+pub const GGUF_VALUE_TYPE_FLOAT32: u32 = 6;
+pub const GGUF_VALUE_TYPE_BOOL: u32 = 7;
+pub const GGUF_VALUE_TYPE_STRING: u32 = 8;
+pub const GGUF_VALUE_TYPE_ARRAY: u32 = 9;
+pub const GGUF_VALUE_TYPE_UINT64: u32 = 10;
+pub const GGUF_VALUE_TYPE_INT64: u32 = 11;
+pub const GGUF_VALUE_TYPE_FLOAT64: u32 = 12;
 
 pub(crate) struct GgufCursor<'a> {
     bytes: &'a [u8],
@@ -132,15 +132,15 @@ impl<'a> GgufCursor<'a> {
     /// Read a numeric-typed GGUF value and coerce it to `u64`.
     pub(crate) fn read_numeric_as_u64(&mut self, value_type: u32) -> Result<u64> {
         match value_type {
-            VT_U8 => self.read_u8_as_u64(),
-            VT_I8 => self.read_i8_as_u64(),
-            VT_U16 => self.read_u16_as_u64(),
-            VT_I16 => self.read_i16_as_u64(),
-            VT_U32 => self.read_u32_as_u64(),
-            VT_I32 => self.read_i32_as_u64(),
-            VT_U64 => self.read_u64(),
-            VT_I64 => self.read_i64_as_u64(),
-            VT_BOOL => self.read_u8_as_u64(),
+            GGUF_VALUE_TYPE_UINT8 => self.read_u8_as_u64(),
+            GGUF_VALUE_TYPE_INT8 => self.read_i8_as_u64(),
+            GGUF_VALUE_TYPE_UINT16 => self.read_u16_as_u64(),
+            GGUF_VALUE_TYPE_INT16 => self.read_i16_as_u64(),
+            GGUF_VALUE_TYPE_UINT32 => self.read_u32_as_u64(),
+            GGUF_VALUE_TYPE_INT32 => self.read_i32_as_u64(),
+            GGUF_VALUE_TYPE_UINT64 => self.read_u64(),
+            GGUF_VALUE_TYPE_INT64 => self.read_i64_as_u64(),
+            GGUF_VALUE_TYPE_BOOL => self.read_u8_as_u64(),
             other => {
                 Err(self.unsupported(format!("expected numeric GGUF value, got type {other}")))
             }
@@ -184,12 +184,12 @@ impl<'a> GgufCursor<'a> {
     #[allow(dead_code)]
     pub(crate) fn read_scalar_as_string(&mut self, value_type: u32) -> Result<String> {
         match value_type {
-            VT_U8 | VT_I8 | VT_U16 | VT_I16 | VT_U32 | VT_I32 | VT_U64 | VT_I64 | VT_BOOL => {
+            GGUF_VALUE_TYPE_UINT8 | GGUF_VALUE_TYPE_INT8 | GGUF_VALUE_TYPE_UINT16 | GGUF_VALUE_TYPE_INT16 | GGUF_VALUE_TYPE_UINT32 | GGUF_VALUE_TYPE_INT32 | GGUF_VALUE_TYPE_UINT64 | GGUF_VALUE_TYPE_INT64 | GGUF_VALUE_TYPE_BOOL => {
                 Ok(self.read_numeric_as_u64(value_type)?.to_string())
             }
-            VT_F32 => Ok(self.read_f32()?.to_string()),
-            VT_F64 => Ok(self.read_f64()?.to_string()),
-            VT_STRING => self.read_string(),
+            GGUF_VALUE_TYPE_FLOAT32 => Ok(self.read_f32()?.to_string()),
+            GGUF_VALUE_TYPE_FLOAT64 => Ok(self.read_f64()?.to_string()),
+            GGUF_VALUE_TYPE_STRING => self.read_string(),
             other => Err(self.unsupported(format!("unexpected scalar GGUF value type {other}"))),
         }
     }
@@ -197,22 +197,22 @@ impl<'a> GgufCursor<'a> {
     /// Skip an arbitrary GGUF value without materialising it.
     pub(crate) fn skip_value(&mut self, value_type: u32) -> Result<()> {
         match value_type {
-            VT_U8 | VT_I8 | VT_BOOL => {
+            GGUF_VALUE_TYPE_UINT8 | GGUF_VALUE_TYPE_INT8 | GGUF_VALUE_TYPE_BOOL => {
                 self.read_exact(1)?;
             }
-            VT_U16 | VT_I16 => {
+            GGUF_VALUE_TYPE_UINT16 | GGUF_VALUE_TYPE_INT16 => {
                 self.read_exact(2)?;
             }
-            VT_U32 | VT_I32 | VT_F32 => {
+            GGUF_VALUE_TYPE_UINT32 | GGUF_VALUE_TYPE_INT32 | GGUF_VALUE_TYPE_FLOAT32 => {
                 self.read_exact(4)?;
             }
-            VT_U64 | VT_I64 | VT_F64 => {
+            GGUF_VALUE_TYPE_UINT64 | GGUF_VALUE_TYPE_INT64 | GGUF_VALUE_TYPE_FLOAT64 => {
                 self.read_exact(8)?;
             }
-            VT_STRING => {
+            GGUF_VALUE_TYPE_STRING => {
                 let _ = self.read_string()?;
             }
-            VT_ARRAY => self.skip_array_value()?,
+            GGUF_VALUE_TYPE_ARRAY => self.skip_array_value()?,
             other => {
                 return Err(self.unsupported(format!("unsupported GGUF value type {other}")));
             }

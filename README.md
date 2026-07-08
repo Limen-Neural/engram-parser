@@ -1,177 +1,202 @@
 # engram-parser
 
 [![CI](https://github.com/Limen-Neural/engram-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/Limen-Neural/engram-parser/actions/workflows/ci.yml)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+[![codecov](https://codecov.io/gh/Limen-Neural/engram-parser/branch/main/graph/badge.svg)](https://codecov.io/gh/Limen-Neural/engram-parser)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 
-Pure-Rust, **zero-dependency** `.gguf` deserializer and
-Mixture-of-Experts per-expert weight extractor.
+A pure-Rust, zero-dependency parser for GGUF (GPT-Generated Unified Format) v3 files with Mixture of Experts (MoE) support.
 
-## What it does
+## Features
 
-- Parses the GGUF file format (magic, version 3 header, KV metadata,
-  tensor directory) into an in-memory [`GgufLayout`].
-- Enumerates MoE experts discovered in the checkpoint.
-- Rips out the raw byte buffers for any single expert's `gate`, `up`,
-  and `down` projections — supporting both the stacked
-  (`blk.{B}.ffn_{role}_exps.weight`) and per-expert
-  (`blk.{B}.ffn_{role}.{E}.weight`) on-disk conventions.
+- **Zero dependencies**: Pure Rust implementation, no external crates
+- **Complete GGUF v3 parsing**: Headers, metadata, tensor directories
+- **Full GGML type coverage**: 32 type constants (F32, F16, Q4_0-Q8_K, IQ1_S-IQ3_M, etc.)
+- **Human-readable type labels**: `ggml_type_label()` function for all GGML types
+- **Metadata helpers**: Architecture-aware convenience methods (block_count, expert_count, etc.)
+- **MoE support**: Expert weight extraction from stacked and per-expert tensor formats
+- **Byte-level accuracy**: Precise byte length calculations for all quantization types
 
-## What it does NOT do
-
-- No neural-network math. No `matmul`, no `forward`, no routing,
-  no softmax, no dequantization in the default build. F16→F32 bit
-  conversion is available as an optional helper only.
-- No CUDA, no GPU, no SIMD.
-- No runtime dependencies. `[dependencies]` is intentionally empty.
-
-## Scope / Boundaries
-
-This crate **owns**:
-
-- GGUF v3 deserialization (header, KV metadata, tensor directory).
-- MoE expert enumeration (`list_experts`).
-- Per-expert raw weight extraction (`extract_expert` — gate/up/down byte
-  buffers with shape and dtype metadata).
-- Zero-dependency, layout-aware dtype handling (F32/F16/BF16 plus opaque
-  quant types as raw bytes).
-
-This crate **does not own**:
-
-- Neural-network math (matmul, forward, routing, softmax, dequantization
-  in the default build).
-- CUDA/GPU/SIMD execution.
-- Tokenization, inference orchestration, or SNN dynamics.
-- Full checkpoint routing or model-family adapters (see
-  [`cortex-tensor`](https://github.com/Limen-Neural/cortex-tensor)).
-
-**Allowed dependencies:** none — `[dependencies]` stays empty.
-
-**Forbidden dependencies:** inference engines, GPU backends, domain-specific
-adapters.
-
-| Crate | Role |
-|-------|------|
-| `engram-parser` | GGUF parse + per-expert weight extraction |
-| [`cortex-tensor`](https://github.com/Limen-Neural/cortex-tensor) | Tensor math + MoE routing on extracted weights |
-| [`hybrid-fusion`](https://github.com/Limen-Neural/hybrid-fusion) | ANN→SNN orchestration |
-| [`neuromod`](https://github.com/Limen-Neural/neuromod) | SNN neuron dynamics (downstream consumer) |
-
-See [LIM-9](https://linear.app/saaq-spiking-adaptive-activity/issue/LIM-9/plan-rust-runtime-and-deployment-repo-boundary-matrix)
-for the full Rust runtime/deployment boundary matrix and
-[issue #4](https://github.com/Limen-Neural/engram-parser/issues/4) for
-this repo's tracking issue.
-
-## Quick start
+## Quick Start
 
 ```rust
-use engram_parser::{extract_expert, list_experts, load_gguf};
+use engram_parser::{load_gguf, ggml_type_label};
 
-let layout = load_gguf("./model.gguf")?;
-println!("architecture = {}", layout.metadata.architecture());
+let layout = load_gguf("model.gguf")?;
 
-for (block, expert) in list_experts(&layout) {
-    let weights = extract_expert(&layout, block, expert)?;
-    if let Some(gate) = &weights.gate {
-        println!("blk.{block}.expert{expert}.gate: dims={:?} dtype={:?} bytes={}",
-            gate.dims, gate.dtype, gate.bytes.len());
-    }
+// Access metadata with helper methods
+println!("Architecture: {}", layout.metadata.architecture());
+println!("Quantization: {}", layout.metadata.quantization());
+println!("Block count: {:?}", layout.metadata.block_count());
+println!("Expert count: {:?}", layout.metadata.expert_count());
+
+// List and extract MoE experts
+for (block, expert) in engram_parser::list_experts(&layout) {
+    let weights = engram_parser::extract_expert(&layout, block, expert)?;
+    println!("Expert {block}.{expert}: gate={:?}, up={:?}, down={:?}",
+        weights.gate.is_some(), weights.up.is_some(), weights.down.is_some());
 }
-# Ok::<(), engram_parser::ParserError>(())
+
+// Use type labels for human-readable output
+for (name, tensor) in &layout.tensors {
+    println!("{}: type={}, dims={:?}",
+        name, ggml_type_label(tensor.ggml_type), tensor.dims);
+}
 ```
 
-## Supported dtypes
+## Supported GGML Types
 
-Layout-aware parsing: `F32`, `F16`, `BF16` (GGML 30), `Q8_0`, `Q4_K`,
-`Q5_K`, `Q6_K`, `IQ3_S` (opaque), plus a `DType::Other(u32)` catch-all.
-Only `F32` and `F16` have in-crate numeric accessors; everything else
-is returned as raw `Vec<u8>`.
+The parser supports all 32 GGML tensor type constants:
 
-## Public API
+### Floating Point Types
+- `GGML_TYPE_F32` (0): 32-bit float
+- `GGML_TYPE_F16` (1): 16-bit float
+- `GGML_TYPE_F64` (28): 64-bit float
+- `GGML_TYPE_BF16` (30): Brain float 16
 
-`load_gguf`, `parse_bytes`, `GgufLayout`, `GgufMetadata`, `Tensor`,
-`DType`, `extract_expert`, `list_experts`, `MoeExpertWeights`,
-`RawTensor`, `ParserError`, `Result`.
+### Integer Types
+- `GGML_TYPE_I8` (24): 8-bit integer
+- `GGML_TYPE_I16` (25): 16-bit integer
+- `GGML_TYPE_I32` (26): 32-bit integer
+- `GGML_TYPE_I64` (27): 64-bit integer
 
-## Ecosystem / Sibling parsers (LIM-9)
+### Quantized Types
+- `GGML_TYPE_Q4_0` (2), `GGML_TYPE_Q4_1` (3): 4-bit quantization
+- `GGML_TYPE_Q5_0` (6), `GGML_TYPE_Q5_1` (7): 5-bit quantization
+- `GGML_TYPE_Q8_0` (8), `GGML_TYPE_Q8_1` (9): 8-bit quantization
+- `GGML_TYPE_Q2_K` through `GGML_TYPE_Q8_K` (10-15): K-quant types
+- `GGML_TYPE_IQ1_S` (19), `GGML_TYPE_IQ1_M` (29): 1-bit i-quant
+- `GGML_TYPE_IQ2_XXS` (16), `GGML_TYPE_IQ2_XS` (17), `GGML_TYPE_IQ2_S` (22): 2-bit i-quant
+- `GGML_TYPE_IQ3_XXS` (18), `GGML_TYPE_IQ3_S` (21), `GGML_TYPE_IQ3_M` (31): 3-bit i-quant
+- `GGML_TYPE_IQ4_NL` (20), `GGML_TYPE_IQ4_XS` (23): 4-bit i-quant
 
-- **engram-parser** (this crate): canonical zero-dep GGUF v3 deserializer + per-expert MoE raw weight ripper.
-- Safetensors extraction (header inspection, deterministic manifest, MoE router/expert candidate discovery via classify + groups + layout families) from `rmems/corinth-canal` (experimental source of inspiration) is tracked as a **separate issue** in this repo: #10 (parallel to the GGUF work in #7).
-  - Source-side bootstrap/supporting: rmems/corinth-canal#116.
-  - Coordination for consumers (e.g. future multi-format in cortex): Limen-Neural/cortex-tensor#9.
-  - The reusable implementation will target a dedicated Limen-Neural crate (per org boundary matrix LIM-9); engram-parser charter remains GGUF-only.
-- **Clarification**: one-way extraction/copy of code from inspiration. We are not adding any dependency from corinth-canal. corinth-canal keeps an unmodified reference copy (per its PROMOTION_RULES "frozen" status). See #10, #7, and the plan for full cross-links and "no dep on corinth-canal" language.
+All types have:
+- Public constants for matching (e.g., `GGML_TYPE_IQ3_M`)
+- Human-readable labels via `ggml_type_label()`
+- Precise byte length calculations where applicable
+- `DType` enum representation for type-safe code
 
-Cross-links and updates performed when #10 was created.
+## Metadata Helper Methods
+
+The `GgufMetadata` struct provides architecture-aware convenience methods:
+
+```rust
+// Basic metadata
+metadata.architecture()           // e.g., "qwen2moe"
+metadata.quantization()           // e.g., "Q4_K_M"
+
+// Model dimensions (architecture-aware)
+metadata.block_count()            // {arch}.block_count
+metadata.expert_count()           // {arch}.expert_count or num_experts
+metadata.expert_used_count()      // {arch}.expert_used_count or num_experts_per_tok
+metadata.embedding_length()       // {arch}.embedding_length
+metadata.head_count()             // {arch}.attention.head_count
+
+// Generic accessors
+metadata.numeric("custom.key")    // Any numeric value
+metadata.string("custom.key")     // Any string value
+metadata.float32("custom.key")    // Any f32 value
+metadata.float64("custom.key")    // Any f64 value
+```
+
+## MoE Expert Extraction
+
+Extract weights for Mixture of Experts models:
+
+```rust
+use engram_parser::{extract_expert, list_experts};
+
+// List all experts in the model
+for (block, expert) in list_experts(&layout) {
+    println!("Found expert: block={}, expert={}", block, expert);
+}
+
+// Extract weights for a specific expert
+let weights = extract_expert(&layout, 0, 0)?;
+
+// Access gate, up, and down projection weights
+if let Some(gate) = weights.gate {
+    println!("Gate weight: {:?} bytes", gate.bytes.len());
+}
+if let Some(up) = weights.up {
+    println!("Up weight: {:?} bytes", up.bytes.len());
+}
+if let Some(down) = weights.down {
+    println!("Down weight: {:?} bytes", down.bytes.len());
+}
+```
+
+Supports both:
+- **Stacked format**: `blk.{B}.ffn_{role}_exps.weight` (all experts in one tensor)
+- **Per-expert format**: `blk.{B}.ffn_{role}.{E}.weight` (separate tensors)
+
+## Type Labels
+
+Convert GGML type IDs to human-readable strings:
+
+```rust
+use engram_parser::ggml_type_label;
+
+assert_eq!(ggml_type_label(0), "F32");
+assert_eq!(ggml_type_label(1), "F16");
+assert_eq!(ggml_type_label(31), "IQ3_M");
+assert_eq!(ggml_type_label(999), "unknown");
+```
+
+## API Reference
+
+### Core Functions
+
+- `load_gguf(path)`: Load and parse a GGUF file from disk
+- `parse_bytes(bytes, path)`: Parse GGUF data from a byte vector
+- `list_experts(layout)`: List all MoE experts in the model
+- `extract_expert(layout, block, expert)`: Extract weights for a specific expert
+
+### Core Types
+
+- `GgufLayout`: Parsed GGUF file with metadata and tensor directory
+- `GgufMetadata`: Architecture and model configuration
+- `Tensor`: Tensor directory entry with shape and type information
+- `MoeExpertWeights`: Extracted weights for a single MoE expert
+- `RawTensor`: Raw tensor bytes with metadata
+- `DType`: Type-safe representation of GGML tensor types
+- `ParserError`: Error type for all parser operations
+
+### Constants
+
+- `GGML_TYPE_F32` through `GGML_TYPE_IQ3_M`: 32 GGML type constants
+- `GGUF_VALUE_TYPE_*`: Metadata value type constants
 
 ## Development
 
-This is a pure-Rust, zero-dependency crate. Build, lint, and test commands use `--all-features`.
-
 ```bash
-# Format
-cargo fmt --check
-
-# Lint (fail on warnings)
-cargo clippy --all-targets --all-features -- -D warnings
-
-# Build
-cargo build --all-features
-
-# Test
+# Run all tests
 cargo test --all-features
 
-# Coverage (local; requires cargo-llvm-cov: cargo install cargo-llvm-cov)
-cargo llvm-cov --all-targets --all-features --locked --lcov --output-path lcov.info
+# Run clippy with strict warnings
+cargo clippy --all-features --all-targets -- -D warnings
+
+# Generate documentation
+cargo doc --all-features --open
 ```
-
-## Docker
-
-```bash
-# Build the image locally (includes build + test verification)
-docker build -t engram-parser .
-
-# Run tests in the container
-docker run --rm engram-parser
-
-# Pull from GHCR (published on merges to main)
-docker pull ghcr.io/limen-neural/engram-parser:main
-```
-
-## CI
-
-- GitHub Actions: `.github/workflows/ci.yml` (hardened via #11; uses Codecov per <https://about.codecov.io/language/rust/>)
-- Security: `.github/workflows/security.yml` (RustSec audit always runs; Snyk SCA+SAST opt-in via `SNYK_TOKEN` secret, see #12)
-- Azure Pipelines: `azure-pipelines.yml` (tracked in #8 for cross-platform ubuntu/mac/windows)
-- Docker: `Dockerfile` + `.github/workflows/docker-build.yml` (tracked in #9 for GHCR reproducible builds; use user's Docker CLI for local verification)
-- Other CI/DX issues: #13 (releases on tags w/ sentry option), #14 (MSRV), #15 (Dependabot no auto-merge), #16 (layout clean)
-
-See the issue bodies for full ACs and corinth-canal inspiration patterns (one-way copy only; no dep on corinth-canal).
-
-Cross-reference: #11, #8, #9, #7, #5, LIM-9.
-
-## MSRV (Minimum Supported Rust Version)
-
-**MSRV: 1.87**
-
-This crate guarantees compatibility with Rust 1.87 and later. The MSRV is:
-
-- Declared in `Cargo.toml` via `rust-version = "1.87"`
-- Tested in CI on every PR and push (see `msrv` job in `.github/workflows/ci.yml`)
-- Verified alongside stable Rust to ensure both toolchains pass all checks
-
-**MSRV Policy:**
-- MSRV bumps will be documented in release notes
-- Bumps are considered breaking changes and follow semver conventions
-- Justification is required when bumping MSRV (e.g., dependency requirements, critical features)
-
-See [issue #14](https://github.com/Limen-Neural/engram-parser/issues/14) for the full MSRV policy discussion.
-
 
 ## License
 
-Licensed under either of
+Licensed under either of:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE-2.0](LICENSE-APACHE-2.0) or [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0))
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or [http://opensource.org/licenses/MIT](http://opensource.org/licenses/MIT))
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
 
 at your option.
+
+## Contributing
+
+Contributions are welcome! Please ensure:
+- All tests pass (`cargo test --all-features`)
+- No clippy warnings (`cargo clippy --all-features --all-targets -- -D warnings`)
+- New features include comprehensive tests
+- Documentation is updated for public APIs
+
+## Related Projects
+
+- **[corinth-canal](https://github.com/rmems/corinth-canal)**: Reference implementation for GGUF parsing and MoE extraction
+- **[cortex-tensor](https://github.com/Limen-Neural/cortex-tensor)**: Tensor operations library that consumes engram-parser output
