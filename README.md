@@ -140,9 +140,10 @@ docker pull ghcr.io/limen-neural/engram-parser:main
 ## CI
 
 - GitHub Actions: `.github/workflows/ci.yml` (hardened via #11; uses Codecov per <https://about.codecov.io/language/rust/>)
+- Security: `.github/workflows/security.yml` (RustSec audit always runs; Snyk SCA+SAST opt-in via `SNYK_TOKEN` secret, see #12)
 - Azure Pipelines: `azure-pipelines.yml` (tracked in #8 for cross-platform ubuntu/mac/windows)
 - Docker: `Dockerfile` + `.github/workflows/docker-build.yml` (tracked in #9 for GHCR reproducible builds; use user's Docker CLI for local verification)
-- Other CI/DX issues: #12 (security), #13 (releases on tags w/ sentry option), #14 (MSRV), #15 (Dependabot no auto-merge), #16 (layout clean)
+- Other CI/DX issues: #13 (releases on tags w/ sentry option), #14 (MSRV), #15 (Dependabot no auto-merge), #16 (layout clean)
 
 See the issue bodies for full ACs and corinth-canal inspiration patterns (one-way copy only; no dep on corinth-canal).
 
