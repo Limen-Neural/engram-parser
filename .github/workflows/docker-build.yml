@@ -20,7 +20,7 @@ jobs:
     name: Build Docker Image (CPU-only)
     permissions:
       contents: read
-    # Standard GitHub runners (no self-hosted GPU for this CPU-only crate)
+      packages: write
     runs-on: ubuntu-latest
 
     steps:
@@ -51,55 +51,20 @@ jobs:
           fi
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
 
-      - name: Build Docker Image
-        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
-        with:
-          context: .
-          push: false
-          tags: ${{ steps.tags.outputs.tags }}
-          # No build-args needed (CPU-only, stable Rust in Dockerfile)
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  publish:
-    name: Publish to GHCR
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
-    permissions:
-      contents: read
-      packages: write
-    runs-on: ubuntu-latest
-
-    steps:
-      # actions/checkout@v4.2.2
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          persist-credentials: false
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
-
-      - name: Set Docker tags
-        id: tags
-        env:
-          COMMIT_SHA: ${{ github.sha }}
-          REPO_RAW: ${{ github.repository }}
-        run: |
-          REPO="ghcr.io/$(echo "$REPO_RAW" | tr '[:upper:]' '[:lower:]')"
-          echo "tags=${REPO}:${COMMIT_SHA},${REPO}:main" >> $GITHUB_OUTPUT
-
       - name: Login to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push Docker Image
+      - name: Build Docker Image
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: .
-          push: true
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.tags.outputs.tags }}
           # No build-args needed (CPU-only, stable Rust in Dockerfile)
           cache-from: type=gha
+          cache-to: type=gha,mode=max
