@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use super::cursor::{GGUF_MAGIC, GGUF_VERSION, GgufCursor, VT_STRING, invalid_layout, unsupported};
+use super::cursor::{GGUF_MAGIC, GGUF_VERSION, GgufCursor, GGUF_VALUE_TYPE_STRING, invalid_layout, unsupported};
 use super::tensor::{DType, Tensor};
 use crate::error::{ParserError, Result};
 
@@ -48,6 +48,79 @@ impl GgufMetadata {
     /// Convenience: numeric KV coerced to `usize`.
     pub fn numeric(&self, key: &str) -> Option<usize> {
         self.numerics.get(key).map(|&v| v as usize)
+    }
+
+    /// Convenience: quantization type string (`general.quantization_type`)
+    /// or `"unknown"` if not present.
+    pub fn quantization(&self) -> &str {
+        self.strings
+            .get("general.quantization_type")
+            .map(String::as_str)
+            .unwrap_or("unknown")
+    }
+
+    /// Convenience: numeric KV coerced to `usize`, looking up
+    /// `{architecture}.{key}` (e.g. `olmoe.block_count`).
+    ///
+    /// Returns `None` if the architecture is unknown or the key is missing.
+    pub fn arch_numeric(&self, key: &str) -> Option<usize> {
+        let arch = self.architecture();
+        if arch == "unknown" {
+            return None;
+        }
+        let full_key = format!("{arch}.{key}");
+        self.numeric(&full_key)
+    }
+
+    /// Convenience: block count from `{architecture}.block_count`.
+    pub fn block_count(&self) -> Option<usize> {
+        self.arch_numeric("block_count")
+    }
+
+    /// Convenience: expert count from `{architecture}.expert_count`
+    /// (some models use `num_experts` instead).
+    pub fn expert_count(&self) -> Option<usize> {
+        self.arch_numeric("expert_count")
+            .or_else(|| self.arch_numeric("num_experts"))
+    }
+
+    /// Convenience: number of experts used per token from
+    /// `{architecture}.expert_used_count` (some models use
+    /// `num_experts_per_tok`).
+    pub fn expert_used_count(&self) -> Option<usize> {
+        self.arch_numeric("expert_used_count")
+            .or_else(|| self.arch_numeric("num_experts_per_tok"))
+    }
+
+    /// Convenience: embedding length from `{architecture}.embedding_length`.
+    pub fn embedding_length(&self) -> Option<usize> {
+        self.arch_numeric("embedding_length")
+    }
+
+    /// Convenience: attention head count from
+    /// `{architecture}.attention.head_count`.
+    pub fn head_count(&self) -> Option<usize> {
+        let arch = self.architecture();
+        if arch == "unknown" {
+            return None;
+        }
+        let full_key = format!("{arch}.attention.head_count");
+        self.numeric(&full_key)
+    }
+
+    /// Generic string metadata lookup.
+    pub fn string(&self, key: &str) -> Option<&str> {
+        self.strings.get(key).map(String::as_str)
+    }
+
+    /// Generic f32 metadata lookup.
+    pub fn float32(&self, key: &str) -> Option<f32> {
+        self.floats_32.get(key).copied()
+    }
+
+    /// Generic f64 metadata lookup.
+    pub fn float64(&self, key: &str) -> Option<f64> {
+        self.floats_64.get(key).copied()
     }
 }
 
@@ -292,15 +365,15 @@ fn capture_kv(
     value_type: u32,
 ) -> Result<()> {
     use super::cursor::{
-        VT_BOOL, VT_F32, VT_F64, VT_I8, VT_I16, VT_I32, VT_I64, VT_U8, VT_U16, VT_U32, VT_U64,
+        GGUF_VALUE_TYPE_BOOL, GGUF_VALUE_TYPE_FLOAT32, GGUF_VALUE_TYPE_FLOAT64, GGUF_VALUE_TYPE_INT8, GGUF_VALUE_TYPE_INT16, GGUF_VALUE_TYPE_INT32, GGUF_VALUE_TYPE_INT64, GGUF_VALUE_TYPE_UINT8, GGUF_VALUE_TYPE_UINT16, GGUF_VALUE_TYPE_UINT32, GGUF_VALUE_TYPE_UINT64,
     };
     match value_type {
-        VT_U8 | VT_I8 | VT_U16 | VT_I16 | VT_U32 | VT_I32 | VT_U64 | VT_I64 | VT_BOOL => {
+        GGUF_VALUE_TYPE_UINT8 | GGUF_VALUE_TYPE_INT8 | GGUF_VALUE_TYPE_UINT16 | GGUF_VALUE_TYPE_INT16 | GGUF_VALUE_TYPE_UINT32 | GGUF_VALUE_TYPE_INT32 | GGUF_VALUE_TYPE_UINT64 | GGUF_VALUE_TYPE_INT64 | GGUF_VALUE_TYPE_BOOL => {
             capture_numeric_kv(cursor, metadata, key, value_type)
         }
-        VT_F32 => capture_f32_kv(cursor, metadata, key),
-        VT_F64 => capture_f64_kv(cursor, metadata, key),
-        VT_STRING => capture_string_kv(cursor, metadata, key),
+        GGUF_VALUE_TYPE_FLOAT32 => capture_f32_kv(cursor, metadata, key),
+        GGUF_VALUE_TYPE_FLOAT64 => capture_f64_kv(cursor, metadata, key),
+        GGUF_VALUE_TYPE_STRING => capture_string_kv(cursor, metadata, key),
         _ => capture_skipped_kv(cursor, value_type),
     }
 }
