@@ -149,6 +149,24 @@ See the issue bodies for full ACs and corinth-canal inspiration patterns (one-wa
 
 Cross-reference: #11, #8, #9, #7, #5, LIM-9.
 
+## MSRV (Minimum Supported Rust Version)
+
+**MSRV: 1.87**
+
+This crate guarantees compatibility with Rust 1.87 and later. The MSRV is:
+
+- Declared in `Cargo.toml` via `rust-version = "1.87"`
+- Tested in CI on every PR and push (see `msrv` job in `.github/workflows/ci.yml`)
+- Verified alongside stable Rust to ensure both toolchains pass all checks
+
+**MSRV Policy:**
+- MSRV bumps will be documented in release notes
+- Bumps are considered breaking changes and follow semver conventions
+- Justification is required when bumping MSRV (e.g., dependency requirements, critical features)
+
+See [issue #14](https://github.com/Limen-Neural/engram-parser/issues/14) for the full MSRV policy discussion.
+
+
 ## License
 
 Licensed under either of
