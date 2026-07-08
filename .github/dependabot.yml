@@ -1,0 +1,19 @@
+# Dependabot configuration for automated dependency updates
+# See: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # GitHub Actions - keep action versions current with security patches
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+    # Cargo dependencies will be added when the crate has external deps
+    # - package-ecosystem: "cargo"
+    #   directory: "/"
+    #   schedule:
+    #     interval: "weekly"
+    #   labels:
+    #     - "dependencies"
