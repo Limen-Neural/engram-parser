@@ -3,11 +3,12 @@
 [![CI](https://github.com/Limen-Neural/engram-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/Limen-Neural/engram-parser/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
-Pure-Rust, **zero-dependency** `.gguf` deserializer and
-Mixture-of-Experts per-expert weight extractor.
+Pure-Rust, **zero-dependency** parser for `.gguf` and `.safetensors` checkpoint formats with
+Mixture-of-Experts support.
 
 ## What it does
 
+### GGUF Format
 - Parses the GGUF file format (magic, version 3 header, KV metadata,
   tensor directory) into an in-memory [`GgufLayout`].
 - Enumerates MoE experts discovered in the checkpoint.
@@ -15,6 +16,14 @@ Mixture-of-Experts per-expert weight extractor.
   and `down` projections — supporting both the stacked
   (`blk.{B}.ffn_{role}_exps.weight`) and per-expert
   (`blk.{B}.ffn_{role}.{E}.weight`) on-disk conventions.
+
+### Safetensors Format
+- Parses Safetensors headers (8-byte length prefix + JSON metadata + tensor data)
+  with zero external dependencies.
+- Generates deterministic manifests for single-file and multi-shard checkpoints.
+- Discovers MoE router/expert candidates via tensor name classification.
+- Detects layout families (generic_moe, deepseek_v3_family, phimoe, granitemoe, afmoe, lfm2_moe).
+- Supports Hugging Face indexed checkpoint format (`.safetensors.index.json`).
 
 ## What it does NOT do
 
@@ -29,7 +38,9 @@ Mixture-of-Experts per-expert weight extractor.
 This crate **owns**:
 
 - GGUF v3 deserialization (header, KV metadata, tensor directory).
-- MoE expert enumeration (`list_experts`).
+- Safetensors header inspection and manifest generation.
+- MoE expert enumeration (`list_experts`) for GGUF.
+- MoE router/expert candidate discovery for Safetensors.
 - Per-expert raw weight extraction (`extract_expert` — gate/up/down byte
   buffers with shape and dtype metadata).
 - Zero-dependency, layout-aware dtype handling (F32/F16/BF16 plus opaque
@@ -51,7 +62,7 @@ adapters.
 
 | Crate | Role |
 |-------|------|
-| `engram-parser` | GGUF parse + per-expert weight extraction |
+| `engram-parser` | GGUF + Safetensors parsing + MoE weight extraction |
 | [`cortex-tensor`](https://github.com/Limen-Neural/cortex-tensor) | Tensor math + MoE routing on extracted weights |
 | [`hybrid-fusion`](https://github.com/Limen-Neural/hybrid-fusion) | ANN→SNN orchestration |
 | [`neuromod`](https://github.com/Limen-Neural/neuromod) | SNN neuron dynamics (downstream consumer) |
@@ -62,6 +73,8 @@ for the full Rust runtime/deployment boundary matrix and
 this repo's tracking issue.
 
 ## Quick start
+
+### GGUF
 
 ```rust
 use engram_parser::{extract_expert, list_experts, load_gguf};
@@ -79,27 +92,81 @@ for (block, expert) in list_experts(&layout) {
 # Ok::<(), engram_parser::ParserError>(())
 ```
 
+### Safetensors
+
+```rust
+use engram_parser::inspect_safetensors_checkpoint;
+
+let manifest = inspect_safetensors_checkpoint("./model.safetensors")?;
+println!("Found {} tensors across {} shards",
+    manifest.tensors.len(), manifest.checkpoint.shard_count);
+
+// Inspect MoE candidates
+for router in &manifest.candidates.router_candidates {
+    println!("Router: {} (score={}, layer_hint={:?})",
+        router.name, router.score, router.layer_hint);
+}
+
+// Group experts by layer
+for group in &manifest.candidates.expert_groups {
+    println!("Expert group: {} ({} experts, layer_hint={:?})",
+        group.group_key, group.expert_indices.len(), group.layer_hint);
+}
+
+if let Some(family) = manifest.candidates.detected_layout_family {
+    println!("Detected layout family: {}", family);
+}
+# Ok::<(), engram_parser::ParserError>(())
+```
+
 ## Supported dtypes
 
+### GGUF
 Layout-aware parsing: `F32`, `F16`, `BF16` (GGML 30), `Q8_0`, `Q4_K`,
 `Q5_K`, `Q6_K`, `IQ3_S` (opaque), plus a `DType::Other(u32)` catch-all.
 Only `F32` and `F16` have in-crate numeric accessors; everything else
-is returned as raw `Vec<u8>`.
+is exposed as `&[u8]` with shape and dtype metadata.
 
-## Public API
+### Safetensors
+Header-based dtype parsing: `F32`, `F16`, `BF16`, `F64`, `I8`, `I16`, `I32`, `I64`,
+`U8`, `U16`, `U32`, `U64`, `BOOL`, plus exotic types (`F8_E5M2`, `F8_E4M3`, `INT4`, etc.).
+All tensors are exposed as metadata records; raw byte access requires external memory mapping.
 
-`load_gguf`, `parse_bytes`, `GgufLayout`, `GgufMetadata`, `Tensor`,
-`DType`, `extract_expert`, `list_experts`, `MoeExpertWeights`,
-`RawTensor`, `ParserError`, `Result`.
+## Architecture
 
-## Ecosystem / Sibling parsers (LIM-9)
+```
+src/
+├── error.rs              # Unified error types
+├── gguf/                 # GGUF format support
+│   ├── mod.rs            # Public API: load_gguf, parse_bytes
+│   ├── cursor.rs         # Binary cursor for GGUF format
+│   ├── layout.rs         # GgufLayout, GgufMetadata
+│   └── tensor.rs         # Tensor, DType
+├── moe/                  # MoE support (GGUF)
+│   ├── mod.rs            # Public API: list_experts, extract_expert
+│   ├── expert.rs         # MoeExpertWeights, RawTensor
+│   └── extract.rs        # Expert extraction logic
+├── safetensors/          # Safetensors format support
+│   ├── mod.rs            # Public API: inspect_safetensors_checkpoint
+│   ├── json.rs           # Zero-dependency JSON parser
+│   ├── header.rs         # Safetensors header parsing
+│   ├── manifest.rs       # Manifest types
+│   └── discovery.rs      # MoE router/expert discovery
+└── lib.rs                # Module exports
+```
 
-- **engram-parser** (this crate): canonical zero-dep GGUF v3 deserializer + per-expert MoE raw weight ripper.
-- Safetensors extraction (header inspection, deterministic manifest, MoE router/expert candidate discovery via classify + groups + layout families) from `rmems/corinth-canal` (experimental source of inspiration) is tracked as a **separate issue** in this repo: #10 (parallel to the GGUF work in #7).
+## Extraction / Inspiration
+
+- **Safetensors support** (header inspection, deterministic manifest, MoE router/expert
+  candidate discovery via classify + groups + layout families) was extracted from
+  `rmems/corinth-canal` (experimental source of inspiration) and implemented as
+  [issue #10](https://github.com/Limen-Neural/engram-parser/issues/10) (parallel to the GGUF work in #7).
   - Source-side bootstrap/supporting: rmems/corinth-canal#116.
   - Coordination for consumers (e.g. future multi-format in cortex): Limen-Neural/cortex-tensor#9.
-  - The reusable implementation will target a dedicated Limen-Neural crate (per org boundary matrix LIM-9); engram-parser charter remains GGUF-only.
-- **Clarification**: one-way extraction/copy of code from inspiration. We are not adding any dependency from corinth-canal. corinth-canal keeps an unmodified reference copy (per its PROMOTION_RULES "frozen" status). See #10, #7, and the plan for full cross-links and "no dep on corinth-canal" language.
+  - The reusable implementation targets this crate per org boundary matrix LIM-9.
+- **Clarification**: one-way extraction/copy of code from inspiration. We are not adding any dependency
+  from corinth-canal. corinth-canal keeps an unmodified reference copy (per its PROMOTION_RULES "frozen"
+  status). See #10, #7, and the plan for full cross-links and "no dep on corinth-canal" language.
 
 Cross-links and updates performed when #10 was created.
 

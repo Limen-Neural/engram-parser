@@ -3,12 +3,12 @@ name = "engram-parser"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.87"
-description = "Pure-Rust, zero-dependency GGUF deserializer and Mixture-of-Experts per-expert weight extractor. Returns raw byte buffers with shape metadata; performs no neural-network math."
+description = "Pure-Rust, zero-dependency GGUF and Safetensors parser with Mixture-of-Experts support. Returns raw byte buffers with shape metadata; performs no neural-network math."
 license = "MIT OR Apache-2.0"
 authors = ["Raul Montoya Cardenas <montoyaraul34@gmail.com>"]
 repository = "https://github.com/Limen-Neural/engram-parser"
 homepage = "https://github.com/Limen-Neural/engram-parser"
-keywords = ["gguf", "moe", "parser", "weights", "deserializer"]
+keywords = ["gguf", "safetensors", "moe", "parser", "weights"]
 categories = ["parser-implementations", "science"]
 readme = "README.md"
 
