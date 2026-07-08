@@ -1,5 +1,15 @@
+# Build artifacts
 /target
-/Cargo.lock.bak
 **/*.rs.bk
+
+# Cargo packaging artifacts (cargo package/publish creates these)
+/target/package/
+
+# Backup files
+/Cargo.lock.bak
+
+# IDE/editor
 .mimocode/
-engram-parser/
+
+# Nested crate duplicates (from cargo package or accidental clones)
+/engram-parser/

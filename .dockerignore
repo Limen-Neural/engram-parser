@@ -1,5 +1,11 @@
-# Ignore junk for Docker builds (helps with the duplicated layout issue)
-engram-parser/
+# Build artifacts
 target/
+
+# Git metadata
 **/.git
+
+# Backup files
 **/*.rs.bk
+
+# Nested crate duplicates (from cargo package or accidental clones)
+engram-parser/
