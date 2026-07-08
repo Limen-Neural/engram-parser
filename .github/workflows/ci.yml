@@ -53,6 +53,16 @@ jobs:
       - name: Test
         run: cargo test --all-features
 
+      # Verify build/test leaves no unexpected artifacts (clean-tree guard per qodo review)
+      - name: Check working tree is clean
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "❌ Working tree has unexpected changes after build+test:"
+            git status --short
+            exit 1
+          fi
+          echo "✅ Working tree is clean"
+
       # Coverage using Codecov (per review: "We will use codecov https://about.codecov.io/language/rust/")
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # v2
