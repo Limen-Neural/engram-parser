@@ -76,6 +76,15 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Validate tag exists
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag '$TAG' does not exist in the repository"
+            exit 1
+          fi
+          echo "✓ Tag '$TAG' exists"
+
       - name: Generate changelog
         id: changelog
         run: |
@@ -119,7 +128,7 @@ jobs:
 
       # Optional: Sentry release tracking (if SENTRY_AUTH_TOKEN is configured)
       - name: Create Sentry release
-        if: ${{ env.SENTRY_AUTH_TOKEN != '' }}
+        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
         uses: getsentry/action-release@e769183448303de64eea5e88f5a46ef9c2977a78  # v1
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
