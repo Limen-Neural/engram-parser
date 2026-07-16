@@ -7,7 +7,7 @@
 
 use crate::error::{ParserError, Result};
 
-pub(crate) const GGUF_MAGIC: [u8; 4] = [b'G', b'G', b'U', b'F'];
+pub(crate) const GGUF_MAGIC: [u8; 4] = *b"GGUF";
 pub(crate) const GGUF_VERSION: u32 = 3;
 
 pub(crate) fn unsupported(path: &str, reason: impl Into<String>) -> ParserError {
