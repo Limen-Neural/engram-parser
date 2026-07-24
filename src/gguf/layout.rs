@@ -9,7 +9,9 @@
 
 use std::collections::HashMap;
 
-use super::cursor::{GGUF_MAGIC, GGUF_VERSION, GgufCursor, GGUF_VALUE_TYPE_STRING, invalid_layout, unsupported};
+use super::cursor::{
+    GGUF_MAGIC, GGUF_VALUE_TYPE_STRING, GGUF_VERSION, GgufCursor, invalid_layout, unsupported,
+};
 use super::tensor::{DType, Tensor};
 use crate::error::{ParserError, Result};
 
@@ -365,12 +367,21 @@ fn capture_kv(
     value_type: u32,
 ) -> Result<()> {
     use super::cursor::{
-        GGUF_VALUE_TYPE_BOOL, GGUF_VALUE_TYPE_FLOAT32, GGUF_VALUE_TYPE_FLOAT64, GGUF_VALUE_TYPE_INT8, GGUF_VALUE_TYPE_INT16, GGUF_VALUE_TYPE_INT32, GGUF_VALUE_TYPE_INT64, GGUF_VALUE_TYPE_UINT8, GGUF_VALUE_TYPE_UINT16, GGUF_VALUE_TYPE_UINT32, GGUF_VALUE_TYPE_UINT64,
+        GGUF_VALUE_TYPE_BOOL, GGUF_VALUE_TYPE_FLOAT32, GGUF_VALUE_TYPE_FLOAT64,
+        GGUF_VALUE_TYPE_INT8, GGUF_VALUE_TYPE_INT16, GGUF_VALUE_TYPE_INT32, GGUF_VALUE_TYPE_INT64,
+        GGUF_VALUE_TYPE_UINT8, GGUF_VALUE_TYPE_UINT16, GGUF_VALUE_TYPE_UINT32,
+        GGUF_VALUE_TYPE_UINT64,
     };
     match value_type {
-        GGUF_VALUE_TYPE_UINT8 | GGUF_VALUE_TYPE_INT8 | GGUF_VALUE_TYPE_UINT16 | GGUF_VALUE_TYPE_INT16 | GGUF_VALUE_TYPE_UINT32 | GGUF_VALUE_TYPE_INT32 | GGUF_VALUE_TYPE_UINT64 | GGUF_VALUE_TYPE_INT64 | GGUF_VALUE_TYPE_BOOL => {
-            capture_numeric_kv(cursor, metadata, key, value_type)
-        }
+        GGUF_VALUE_TYPE_UINT8
+        | GGUF_VALUE_TYPE_INT8
+        | GGUF_VALUE_TYPE_UINT16
+        | GGUF_VALUE_TYPE_INT16
+        | GGUF_VALUE_TYPE_UINT32
+        | GGUF_VALUE_TYPE_INT32
+        | GGUF_VALUE_TYPE_UINT64
+        | GGUF_VALUE_TYPE_INT64
+        | GGUF_VALUE_TYPE_BOOL => capture_numeric_kv(cursor, metadata, key, value_type),
         GGUF_VALUE_TYPE_FLOAT32 => capture_f32_kv(cursor, metadata, key),
         GGUF_VALUE_TYPE_FLOAT64 => capture_f64_kv(cursor, metadata, key),
         GGUF_VALUE_TYPE_STRING => capture_string_kv(cursor, metadata, key),

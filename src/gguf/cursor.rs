@@ -184,9 +184,15 @@ impl<'a> GgufCursor<'a> {
     #[allow(dead_code)]
     pub(crate) fn read_scalar_as_string(&mut self, value_type: u32) -> Result<String> {
         match value_type {
-            GGUF_VALUE_TYPE_UINT8 | GGUF_VALUE_TYPE_INT8 | GGUF_VALUE_TYPE_UINT16 | GGUF_VALUE_TYPE_INT16 | GGUF_VALUE_TYPE_UINT32 | GGUF_VALUE_TYPE_INT32 | GGUF_VALUE_TYPE_UINT64 | GGUF_VALUE_TYPE_INT64 | GGUF_VALUE_TYPE_BOOL => {
-                Ok(self.read_numeric_as_u64(value_type)?.to_string())
-            }
+            GGUF_VALUE_TYPE_UINT8
+            | GGUF_VALUE_TYPE_INT8
+            | GGUF_VALUE_TYPE_UINT16
+            | GGUF_VALUE_TYPE_INT16
+            | GGUF_VALUE_TYPE_UINT32
+            | GGUF_VALUE_TYPE_INT32
+            | GGUF_VALUE_TYPE_UINT64
+            | GGUF_VALUE_TYPE_INT64
+            | GGUF_VALUE_TYPE_BOOL => Ok(self.read_numeric_as_u64(value_type)?.to_string()),
             GGUF_VALUE_TYPE_FLOAT32 => Ok(self.read_f32()?.to_string()),
             GGUF_VALUE_TYPE_FLOAT64 => Ok(self.read_f64()?.to_string()),
             GGUF_VALUE_TYPE_STRING => self.read_string(),
