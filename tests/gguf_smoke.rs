@@ -14,8 +14,11 @@ const ALIGNMENT: u32 = 32;
 const VT_UINT32: u32 = 4;
 const VT_STRING: u32 = 8;
 
-// Dtypes.
+// Dtypes (GGUF wire type ids).
 const GGML_F32: u32 = 0;
+const GGML_Q8_0: u32 = 8;
+const GGML_Q4_K: u32 = 12;
+const GGML_IQ3_S: u32 = 21;
 
 fn push_u32(out: &mut Vec<u8>, v: u32) {
     out.extend_from_slice(&v.to_le_bytes());
@@ -534,5 +537,204 @@ fn tensor_with_wire_type_31_fails_closed() {
             || msg.contains("InvalidLayout")
             || msg.contains("ggml_type=31"),
         "unexpected error: {msg}"
+    );
+}
+
+#[test]
+fn rejects_unsupported_gguf_version() {
+    let mut out = Vec::new();
+    out.extend_from_slice(&GGUF_MAGIC);
+    push_u32(&mut out, 2); // version 2 — not supported
+    push_u64(&mut out, 0);
+    push_u64(&mut out, 0);
+    let err = parse_bytes(out, "mem://v2".into()).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("unsupported GGUF version") || msg.contains("unsupported GGUF format"),
+        "got: {msg}"
+    );
+}
+
+#[test]
+fn rejects_truncated_file() {
+    let mut out = Vec::new();
+    out.extend_from_slice(&GGUF_MAGIC);
+    push_u32(&mut out, GGUF_VERSION);
+    // Claim one KV but provide no body → EOF while parsing.
+    push_u64(&mut out, 0); // tensor_count
+    push_u64(&mut out, 1); // kv_count
+    let err = parse_bytes(out, "mem://trunc".into()).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("EOF")
+            || msg.contains("overflow")
+            || msg.contains("unsupported")
+            || msg.contains("InvalidLayout")
+            || msg.contains("invalid"),
+        "got: {msg}"
+    );
+}
+
+#[test]
+fn quantization_falls_back_to_file_type() {
+    let kv = [
+        ("general.architecture", KvValue::Str("olmoe")),
+        ("general.file_type", KvValue::U32(15)),
+    ];
+    let bytes = build_gguf(&kv, &[]);
+    let layout = parse_bytes(bytes, "mem://file-type".into()).expect("parse");
+    assert_eq!(layout.metadata.quantization(), "GGUF(15)");
+
+    let kv_f32 = [
+        ("general.architecture", KvValue::Str("olmoe")),
+        ("general.file_type", KvValue::U32(0)),
+    ];
+    let layout_f32 = parse_bytes(build_gguf(&kv_f32, &[]), "mem://ft0".into()).unwrap();
+    assert_eq!(layout_f32.metadata.quantization(), "F32");
+
+    // Explicit quantization_type wins over file_type.
+    let kv_pref = [
+        ("general.quantization_type", KvValue::Str("Q4_K_M")),
+        ("general.file_type", KvValue::U32(15)),
+    ];
+    let layout_pref = parse_bytes(build_gguf(&kv_pref, &[]), "mem://pref".into()).unwrap();
+    assert_eq!(layout_pref.metadata.quantization(), "Q4_K_M");
+}
+
+#[test]
+fn parses_iq3_s_tensor_layout() {
+    // IQ3_S: 256 elements per block, 110 bytes/block (GGUF wire layout).
+    let n = 256usize;
+    let payload = vec![0xABu8; 110];
+    let tensors = [TensorSpec {
+        name: "blk.0.ffn_gate.weight",
+        dims: vec![n],
+        ggml_type: GGML_IQ3_S,
+        payload,
+    }];
+    let kv = [("general.architecture", KvValue::Str("testmoe"))];
+    let layout = parse_bytes(build_gguf(&kv, &tensors), "mem://iq3s".into()).expect("parse");
+    let t = layout.tensor("blk.0.ffn_gate.weight").unwrap();
+    assert_eq!(t.dtype, DType::IQ3_S);
+    assert_eq!(t.byte_len, 110);
+    assert_eq!(layout.tensor_bytes(t).unwrap().len(), 110);
+}
+
+#[test]
+fn extracts_stacked_q8_0_expert_slices() {
+    // Q8_0: block size 32, 34 bytes/block. Per-expert: 32 elems → 34 bytes.
+    let inner = 32usize;
+    let outer = 1usize;
+    let n_experts = 3usize;
+    let per_expert_bytes = 34usize;
+    let mut payload = Vec::with_capacity(n_experts * per_expert_bytes);
+    for e in 0..n_experts {
+        payload.extend(std::iter::repeat_n(e as u8, per_expert_bytes));
+    }
+    let tensors = [
+        TensorSpec {
+            name: "blk.0.ffn_gate_exps.weight",
+            dims: vec![inner, outer, n_experts],
+            ggml_type: GGML_Q8_0,
+            payload: payload.clone(),
+        },
+        TensorSpec {
+            name: "blk.0.ffn_up_exps.weight",
+            dims: vec![inner, outer, n_experts],
+            ggml_type: GGML_Q8_0,
+            payload: payload.clone(),
+        },
+        TensorSpec {
+            name: "blk.0.ffn_down_exps.weight",
+            dims: vec![inner, outer, n_experts],
+            ggml_type: GGML_Q8_0,
+            payload,
+        },
+    ];
+    let kv = [("general.architecture", KvValue::Str("olmoe"))];
+    let layout = parse_bytes(build_gguf(&kv, &tensors), "mem://q8-stacked".into()).expect("parse");
+    assert_eq!(list_experts(&layout), vec![(0, 0), (0, 1), (0, 2)]);
+
+    for e in 0..n_experts {
+        let out = extract_expert(&layout, 0, e).expect("extract");
+        let gate = out.gate.as_ref().expect("gate");
+        assert!(gate.stacked_slice);
+        assert_eq!(gate.bytes.len(), per_expert_bytes);
+        assert!(
+            gate.bytes.iter().all(|&b| b == e as u8),
+            "expert {e} gate bytes should be filled with {e}"
+        );
+        assert_eq!(gate.dtype, DType::Q8_0);
+        assert!(out.is_complete());
+    }
+}
+
+#[test]
+fn extracts_stacked_q4_k_expert_slices() {
+    // Q4_K: 256 elems/block, 144 bytes/block. dims [256, 1, 2] experts.
+    let inner = 256usize;
+    let outer = 1usize;
+    let n_experts = 2usize;
+    let per_expert_bytes = 144usize;
+    let mut payload = Vec::with_capacity(n_experts * per_expert_bytes);
+    for e in 0..n_experts {
+        payload.extend(std::iter::repeat_n((0x10 + e) as u8, per_expert_bytes));
+    }
+    let tensors = [TensorSpec {
+        name: "blk.0.ffn_gate_exps.weight",
+        dims: vec![inner, outer, n_experts],
+        ggml_type: GGML_Q4_K,
+        payload,
+    }];
+    let kv = [("general.architecture", KvValue::Str("olmoe"))];
+    let layout = parse_bytes(build_gguf(&kv, &tensors), "mem://q4k-stacked".into()).expect("parse");
+    let e0 = extract_expert(&layout, 0, 0).unwrap();
+    let gate0 = e0.gate.as_ref().unwrap();
+    assert_eq!(gate0.bytes.len(), 144);
+    assert!(gate0.bytes.iter().all(|&b| b == 0x10));
+    assert_eq!(gate0.dtype, DType::Q4_K);
+
+    let e1 = extract_expert(&layout, 0, 1).unwrap();
+    let gate1 = e1.gate.as_ref().unwrap();
+    assert!(gate1.bytes.iter().all(|&b| b == 0x11));
+}
+
+#[test]
+fn extracts_underscore_per_expert_tensors() {
+    // Alternate naming: ffn_gate_0.weight instead of ffn_gate.0.weight
+    let inner = 2usize;
+    let outer = 2usize;
+    let tensors = [
+        TensorSpec {
+            name: "blk.0.ffn_gate_0.weight",
+            dims: vec![inner, outer],
+            ggml_type: GGML_F32,
+            payload: f32_vec_to_le_bytes(&[1.0; 4]),
+        },
+        TensorSpec {
+            name: "blk.0.ffn_up_0.weight",
+            dims: vec![inner, outer],
+            ggml_type: GGML_F32,
+            payload: f32_vec_to_le_bytes(&[2.0; 4]),
+        },
+        TensorSpec {
+            name: "blk.0.ffn_down_0.weight",
+            dims: vec![inner, outer],
+            ggml_type: GGML_F32,
+            payload: f32_vec_to_le_bytes(&[3.0; 4]),
+        },
+    ];
+    let kv = [("general.architecture", KvValue::Str("qwen3moe"))];
+    let layout = parse_bytes(build_gguf(&kv, &tensors), "mem://uscore".into()).expect("parse");
+    let pairs = list_experts(&layout);
+    assert!(
+        pairs.contains(&(0, 0)),
+        "expected (0,0) in list_experts, got {pairs:?}"
+    );
+    let e0 = extract_expert(&layout, 0, 0).expect("extract underscore expert");
+    assert!(e0.is_complete());
+    assert_eq!(
+        e0.gate.as_ref().unwrap().source_name,
+        "blk.0.ffn_gate_0.weight"
     );
 }

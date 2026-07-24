@@ -36,6 +36,9 @@ pub struct GgufMetadata {
     pub floats_32: HashMap<String, f32>,
     /// `f64`-typed KV pairs.
     pub floats_64: HashMap<String, f64>,
+    /// Derived label from `general.file_type` when
+    /// `general.quantization_type` is absent (e.g. `"F32"`, `"GGUF(15)"`).
+    quantization_from_file_type: Option<String>,
 }
 
 impl GgufMetadata {
@@ -52,12 +55,18 @@ impl GgufMetadata {
         self.numerics.get(key).map(|&v| v as usize)
     }
 
-    /// Convenience: quantization type string (`general.quantization_type`)
-    /// or `"unknown"` if not present.
+    /// Convenience: quantization label.
+    ///
+    /// Prefers the string KV `general.quantization_type`. When that is
+    /// missing, falls back to `general.file_type` (GGUF numeric enum):
+    /// `0 → "F32"`, `1 → "F16"`, otherwise `"GGUF(n)"`. Returns
+    /// `"unknown"` when neither is present.
     pub fn quantization(&self) -> &str {
-        self.strings
-            .get("general.quantization_type")
-            .map(String::as_str)
+        if let Some(s) = self.strings.get("general.quantization_type") {
+            return s.as_str();
+        }
+        self.quantization_from_file_type
+            .as_deref()
             .unwrap_or("unknown")
     }
 
@@ -272,7 +281,24 @@ fn read_metadata_section(
         }
     }
 
+    finalize_quantization_from_file_type(&mut metadata);
     Ok((alignment, metadata))
+}
+
+/// When `general.quantization_type` is absent, derive a display label
+/// from `general.file_type` (common in real GGUF writers).
+fn finalize_quantization_from_file_type(metadata: &mut GgufMetadata) {
+    if metadata.strings.contains_key("general.quantization_type") {
+        return;
+    }
+    let Some(&file_type) = metadata.numerics.get("general.file_type") else {
+        return;
+    };
+    metadata.quantization_from_file_type = Some(match file_type {
+        0 => "F32".into(),
+        1 => "F16".into(),
+        other => format!("GGUF({other})"),
+    });
 }
 
 fn read_tensor_directory(

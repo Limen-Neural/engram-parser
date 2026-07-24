@@ -184,8 +184,24 @@ pub enum DType {
     Q6_K,
     /// `GGML_TYPE_Q8_K` — k-quant 8-bit.
     Q8_K,
-    /// `GGML_TYPE_IQ3_S` — i-quant 3-bit small (3.44 bpw).
+    /// `GGML_TYPE_IQ2_XXS` — i-quant 2-bit extra-extra-small (wire layout only).
+    IQ2_XXS,
+    /// `GGML_TYPE_IQ2_XS` — i-quant 2-bit extra-small.
+    IQ2_XS,
+    /// `GGML_TYPE_IQ3_XXS` — i-quant 3-bit extra-extra-small.
+    IQ3_XXS,
+    /// `GGML_TYPE_IQ1_S` — i-quant 1-bit small.
+    IQ1_S,
+    /// `GGML_TYPE_IQ4_NL` — i-quant 4-bit non-linear (block size 32).
+    IQ4_NL,
+    /// `GGML_TYPE_IQ3_S` — i-quant 3-bit small.
     IQ3_S,
+    /// `GGML_TYPE_IQ2_S` — i-quant 2-bit small.
+    IQ2_S,
+    /// `GGML_TYPE_IQ4_XS` — i-quant 4-bit extra-small.
+    IQ4_XS,
+    /// `GGML_TYPE_IQ1_M` — i-quant 1-bit medium.
+    IQ1_M,
     /// Google Brain bfloat16 (`GGML_TYPE_BF16 = 30`).
     BF16,
     /// 64-bit IEEE-754 double float (`GGML_TYPE_F64 = 28`).
@@ -221,7 +237,15 @@ impl DType {
             GGML_TYPE_Q5_K => Self::Q5_K,
             GGML_TYPE_Q6_K => Self::Q6_K,
             GGML_TYPE_Q8_K => Self::Q8_K,
+            GGML_TYPE_IQ2_XXS => Self::IQ2_XXS,
+            GGML_TYPE_IQ2_XS => Self::IQ2_XS,
+            GGML_TYPE_IQ3_XXS => Self::IQ3_XXS,
+            GGML_TYPE_IQ1_S => Self::IQ1_S,
+            GGML_TYPE_IQ4_NL => Self::IQ4_NL,
             GGML_TYPE_IQ3_S => Self::IQ3_S,
+            GGML_TYPE_IQ2_S => Self::IQ2_S,
+            GGML_TYPE_IQ4_XS => Self::IQ4_XS,
+            GGML_TYPE_IQ1_M => Self::IQ1_M,
             // Wire 31 is historical Q4_0_4_4: fall through to Other(31) via `other`.
             GGML_TYPE_BF16 => Self::BF16,
             GGML_TYPE_F64 => Self::F64,
@@ -250,7 +274,15 @@ impl DType {
             Self::Q5_K => GGML_TYPE_Q5_K,
             Self::Q6_K => GGML_TYPE_Q6_K,
             Self::Q8_K => GGML_TYPE_Q8_K,
+            Self::IQ2_XXS => GGML_TYPE_IQ2_XXS,
+            Self::IQ2_XS => GGML_TYPE_IQ2_XS,
+            Self::IQ3_XXS => GGML_TYPE_IQ3_XXS,
+            Self::IQ1_S => GGML_TYPE_IQ1_S,
+            Self::IQ4_NL => GGML_TYPE_IQ4_NL,
             Self::IQ3_S => GGML_TYPE_IQ3_S,
+            Self::IQ2_S => GGML_TYPE_IQ2_S,
+            Self::IQ4_XS => GGML_TYPE_IQ4_XS,
+            Self::IQ1_M => GGML_TYPE_IQ1_M,
             Self::BF16 => GGML_TYPE_BF16,
             Self::F64 => GGML_TYPE_F64,
             Self::I8 => GGML_TYPE_I8,
@@ -261,7 +293,7 @@ impl DType {
         }
     }
 
-    /// Short human-readable label for this dtype (e.g. `"F32"`, `"IQ3_M"`).
+    /// Short human-readable label for this dtype (e.g. `"F32"`, `"Q4_K"`).
     ///
     /// Delegates to [`ggml_type_label`] for `Other(code)` variants.
     pub fn label(self) -> &'static str {
@@ -280,7 +312,15 @@ impl DType {
             Self::Q5_K => "Q5_K",
             Self::Q6_K => "Q6_K",
             Self::Q8_K => "Q8_K",
+            Self::IQ2_XXS => "IQ2_XXS",
+            Self::IQ2_XS => "IQ2_XS",
+            Self::IQ3_XXS => "IQ3_XXS",
+            Self::IQ1_S => "IQ1_S",
+            Self::IQ4_NL => "IQ4_NL",
             Self::IQ3_S => "IQ3_S",
+            Self::IQ2_S => "IQ2_S",
+            Self::IQ4_XS => "IQ4_XS",
+            Self::IQ1_M => "IQ1_M",
             Self::BF16 => "BF16",
             Self::F64 => "F64",
             Self::I8 => "I8",
@@ -299,11 +339,12 @@ impl DType {
     /// when the total element count is divisible by the block size;
     /// otherwise `None`.
     ///
-    /// Block sizes follow the GGML specification:
-    /// - Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/Q8_1: block size 32
-    /// - Q2_K/Q3_K/Q4_K/Q5_K/Q6_K/Q8_K: block size 256
-    /// - IQ3_S: block size 256
+    /// Block sizes follow the GGUF / llama.cpp wire layouts (`ggml-common.h`):
+    /// - Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/Q8_1/IQ4_NL: block size 32
+    /// - K-quants and most IQ types: block size 256
     /// - Wire type 31 (`Q4_0_4_4`) is **not** modeled: use [`DType::Other`]
+    ///
+    /// This is layout sizing only — no dequantization.
     pub fn byte_len_for_elements(self, n_elements: usize) -> Option<usize> {
         match self {
             Self::F32 => Some(n_elements.checked_mul(4)?),
@@ -313,10 +354,7 @@ impl DType {
             Self::I16 => Some(n_elements.checked_mul(2)?),
             Self::I8 => Some(n_elements),
             // Q*_0/Q*_1 blocked quants: block size 32.
-            // Per-block byte counts (header + packed weights):
-            //   Q4_0: 18 B/block, Q4_1: 20 B/block
-            //   Q5_0: 22 B/block, Q5_1: 24 B/block
-            //   Q8_0: 34 B/block, Q8_1: 36 B/block
+            //   Q4_0: 18, Q4_1: 20, Q5_0: 22, Q5_1: 24, Q8_0: 34, Q8_1: 36
             Self::Q4_0 => blocked_byte_len(n_elements, 32, 18),
             Self::Q4_1 => blocked_byte_len(n_elements, 32, 20),
             Self::Q5_0 => blocked_byte_len(n_elements, 32, 22),
@@ -324,22 +362,28 @@ impl DType {
             Self::Q8_0 => blocked_byte_len(n_elements, 32, 34),
             Self::Q8_1 => blocked_byte_len(n_elements, 32, 36),
             // K-quants: block size 256.
-            //   Q2_K: 84 B/256 elements (2.625 bpw)
-            //   Q3_K: 110 B/256 elements (3.4375 bpw)
-            //   Q4_K: 144 B/256 elements (4.5 bpw)
-            //   Q5_K: 176 B/256 elements (5.5 bpw)
-            //   Q6_K: 210 B/256 elements (6.5625 bpw)
-            //   Q8_K: 292 B/256 elements (9.125 bpw)
+            //   Q2_K: 84, Q3_K: 110, Q4_K: 144, Q5_K: 176, Q6_K: 210, Q8_K: 292
             Self::Q2_K => blocked_byte_len(n_elements, 256, 84),
             Self::Q3_K => blocked_byte_len(n_elements, 256, 110),
             Self::Q4_K => blocked_byte_len(n_elements, 256, 144),
             Self::Q5_K => blocked_byte_len(n_elements, 256, 176),
             Self::Q6_K => blocked_byte_len(n_elements, 256, 210),
             Self::Q8_K => blocked_byte_len(n_elements, 256, 292),
-            // IQ3_S: block size 256, 50 bytes per block
-            //   d(2) + qs(32) + qh(4) + signs(12) = 50 bytes
-            Self::IQ3_S => blocked_byte_len(n_elements, 256, 50),
-            // Other opaque / unknown quant types (includes wire 31 Q4_0_4_4).
+            // IQ wire layouts (llama.cpp `block_iq*`, QK_K=256 unless noted):
+            //   IQ2_XXS: 66, IQ2_XS: 74, IQ2_S: 82
+            //   IQ3_XXS: 98, IQ3_S: 110
+            //   IQ1_S: 50, IQ1_M: 56
+            //   IQ4_NL: block 32 / 18 B, IQ4_XS: 136
+            Self::IQ2_XXS => blocked_byte_len(n_elements, 256, 66),
+            Self::IQ2_XS => blocked_byte_len(n_elements, 256, 74),
+            Self::IQ2_S => blocked_byte_len(n_elements, 256, 82),
+            Self::IQ3_XXS => blocked_byte_len(n_elements, 256, 98),
+            Self::IQ3_S => blocked_byte_len(n_elements, 256, 110),
+            Self::IQ1_S => blocked_byte_len(n_elements, 256, 50),
+            Self::IQ1_M => blocked_byte_len(n_elements, 256, 56),
+            Self::IQ4_NL => blocked_byte_len(n_elements, 32, 18),
+            Self::IQ4_XS => blocked_byte_len(n_elements, 256, 136),
+            // Opaque / unknown (includes wire 31 Q4_0_4_4).
             Self::Other(_) => None,
         }
     }
@@ -515,7 +559,15 @@ mod tests {
             DType::Q5_K,
             DType::Q6_K,
             DType::Q8_K,
+            DType::IQ2_XXS,
+            DType::IQ2_XS,
+            DType::IQ3_XXS,
+            DType::IQ1_S,
+            DType::IQ4_NL,
             DType::IQ3_S,
+            DType::IQ2_S,
+            DType::IQ4_XS,
+            DType::IQ1_M,
             DType::BF16,
             DType::F64,
             DType::I8,
@@ -646,10 +698,22 @@ mod tests {
 
     #[test]
     fn byte_len_for_iq_quants() {
-        // IQ3_S: block_size=256, 50 bytes per block
-        assert_eq!(DType::IQ3_S.byte_len_for_elements(256), Some(50));
-        assert_eq!(DType::IQ3_S.byte_len_for_elements(512), Some(100));
+        // Wire layouts from llama.cpp ggml-common.h (QK_K=256).
+        assert_eq!(DType::IQ2_XXS.byte_len_for_elements(256), Some(66));
+        assert_eq!(DType::IQ2_XS.byte_len_for_elements(256), Some(74));
+        assert_eq!(DType::IQ2_S.byte_len_for_elements(256), Some(82));
+        assert_eq!(DType::IQ3_XXS.byte_len_for_elements(256), Some(98));
+        assert_eq!(DType::IQ3_S.byte_len_for_elements(256), Some(110));
+        assert_eq!(DType::IQ3_S.byte_len_for_elements(512), Some(220));
         assert_eq!(DType::IQ3_S.byte_len_for_elements(100), None);
+        assert_eq!(DType::IQ1_S.byte_len_for_elements(256), Some(50));
+        assert_eq!(DType::IQ1_M.byte_len_for_elements(256), Some(56));
+        assert_eq!(DType::IQ4_NL.byte_len_for_elements(32), Some(18));
+        assert_eq!(DType::IQ4_NL.byte_len_for_elements(64), Some(36));
+        assert_eq!(DType::IQ4_NL.byte_len_for_elements(33), None);
+        assert_eq!(DType::IQ4_XS.byte_len_for_elements(256), Some(136));
+        assert_eq!(DType::from_ggml_type(16), DType::IQ2_XXS);
+        assert_eq!(DType::from_ggml_type(29), DType::IQ1_M);
         // Wire 31 (Q4_0_4_4) is Other with no known layout
         assert_eq!(DType::from_ggml_type(31), DType::Other(31));
         assert_eq!(DType::Other(31).byte_len_for_elements(256), None);
@@ -662,6 +726,8 @@ mod tests {
         assert!(DType::Q8_0.has_known_byte_layout());
         assert!(DType::Q4_K.has_known_byte_layout());
         assert!(DType::IQ3_S.has_known_byte_layout());
+        assert!(DType::IQ2_XXS.has_known_byte_layout());
+        assert!(DType::IQ4_NL.has_known_byte_layout());
         assert!(!DType::Other(31).has_known_byte_layout());
         assert!(!DType::Other(99).has_known_byte_layout());
     }

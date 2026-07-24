@@ -1,15 +1,48 @@
-# Build artifacts
-/target
-**/*.rs.bk
+# AI Tool Local/Ephemeral (no clutter)
+.kilo/worktrees/
+.kilo/*.json
+.devin/cache/
+.mimocode/auth.json
+.mimocode/plans/
+.worktrees/
+.swarm/
+.beads/
+.cline/
+.claude/
+.codex/
+.opencode/
+.beads/
+docs/superpowers/
 
-# Cargo packaging artifacts (cargo package/publish creates these)
-/target/package/
+# Compiled output
+/target/
 
-# Backup files
-/Cargo.lock.bak
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*~
+.cursor/
+.cursorignore
+.zed/
 
-# IDE/editor
-.mimocode/
+# Standard dev + your data
+node_modules/
+dist/
+build/
+*.log
+.env*
+*.env
+__pycache__/
+.cache/
+.DS_Store
+neuromorphic_data/
+remotes.txt
 
-# Nested crate duplicates (from cargo package or accidental clones)
-/engram-parser/
+# Negations: Force-commit the good stuff
+!.kilo/skills/**
+!.kilo/tui.jsonc
+!.devin/blueprint.yaml
+!.mimocode/mimocode.jsonc
+!.mimocode/AGENTS.md
+!.kilocodeignore
