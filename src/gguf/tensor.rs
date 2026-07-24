@@ -78,8 +78,13 @@ pub const GGML_TYPE_F64: u32 = 28;
 pub const GGML_TYPE_IQ1_M: u32 = 29;
 /// `GGML_TYPE_BF16` — Google Brain bfloat16.
 pub const GGML_TYPE_BF16: u32 = 30;
-/// `GGML_TYPE_IQ3_M` — i-quant 3-bit medium.
-pub const GGML_TYPE_IQ3_M: u32 = 31;
+/// GGUF wire type 31: historical `Q4_0_4_4` layout (removed from current ggml).
+///
+/// Must **not** be treated as an IQ3_M block type. HuggingFace “IQ3_M” is a
+/// mixed-quant *preset*, not wire id 31. Corinth-canal documents the same
+/// mapping (`GGML_TYPE_Q4_0_4_4 = 31`); its 111-byte IQ3_M path is an
+/// **internal** non-wire id only.
+pub const GGML_TYPE_Q4_0_4_4: u32 = 31;
 
 // ---------------------------------------------------------------------------
 // Human-readable label helper.
@@ -96,7 +101,7 @@ pub const GGML_TYPE_IQ3_M: u32 = 31;
 /// ```
 /// use engram_parser::ggml_type_label;
 /// assert_eq!(ggml_type_label(0), "F32");
-/// assert_eq!(ggml_type_label(31), "IQ3_M");
+/// assert_eq!(ggml_type_label(31), "Q4_0_4_4");
 /// assert_eq!(ggml_type_label(9999), "unknown");
 /// ```
 pub fn ggml_type_label(ggml_type: u32) -> &'static str {
@@ -130,7 +135,7 @@ pub fn ggml_type_label(ggml_type: u32) -> &'static str {
         GGML_TYPE_F64 => "F64",
         GGML_TYPE_IQ1_M => "IQ1_M",
         GGML_TYPE_BF16 => "BF16",
-        GGML_TYPE_IQ3_M => "IQ3_M",
+        GGML_TYPE_Q4_0_4_4 => "Q4_0_4_4",
         _ => "unknown",
     }
 }
@@ -181,8 +186,6 @@ pub enum DType {
     Q8_K,
     /// `GGML_TYPE_IQ3_S` — i-quant 3-bit small (3.44 bpw).
     IQ3_S,
-    /// `GGML_TYPE_IQ3_M` — i-quant 3-bit medium.
-    IQ3_M,
     /// Google Brain bfloat16 (`GGML_TYPE_BF16 = 30`).
     BF16,
     /// 64-bit IEEE-754 double float (`GGML_TYPE_F64 = 28`).
@@ -219,7 +222,7 @@ impl DType {
             GGML_TYPE_Q6_K => Self::Q6_K,
             GGML_TYPE_Q8_K => Self::Q8_K,
             GGML_TYPE_IQ3_S => Self::IQ3_S,
-            GGML_TYPE_IQ3_M => Self::IQ3_M,
+            // Wire 31 is historical Q4_0_4_4: fall through to Other(31) via `other`.
             GGML_TYPE_BF16 => Self::BF16,
             GGML_TYPE_F64 => Self::F64,
             GGML_TYPE_I8 => Self::I8,
@@ -248,7 +251,6 @@ impl DType {
             Self::Q6_K => GGML_TYPE_Q6_K,
             Self::Q8_K => GGML_TYPE_Q8_K,
             Self::IQ3_S => GGML_TYPE_IQ3_S,
-            Self::IQ3_M => GGML_TYPE_IQ3_M,
             Self::BF16 => GGML_TYPE_BF16,
             Self::F64 => GGML_TYPE_F64,
             Self::I8 => GGML_TYPE_I8,
@@ -279,7 +281,6 @@ impl DType {
             Self::Q6_K => "Q6_K",
             Self::Q8_K => "Q8_K",
             Self::IQ3_S => "IQ3_S",
-            Self::IQ3_M => "IQ3_M",
             Self::BF16 => "BF16",
             Self::F64 => "F64",
             Self::I8 => "I8",
@@ -301,8 +302,8 @@ impl DType {
     /// Block sizes follow the GGML specification:
     /// - Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/Q8_1: block size 32
     /// - Q2_K/Q3_K/Q4_K/Q5_K/Q6_K/Q8_K: block size 256
-    /// - IQ3_S: block size 256 (opaque, byte count not computed)
-    /// - IQ3_M: block size 256 (opaque, byte count not computed)
+    /// - IQ3_S: block size 256
+    /// - Wire type 31 (`Q4_0_4_4`) is **not** modeled: use [`DType::Other`]
     pub fn byte_len_for_elements(self, n_elements: usize) -> Option<usize> {
         match self {
             Self::F32 => Some(n_elements.checked_mul(4)?),
@@ -338,10 +339,7 @@ impl DType {
             // IQ3_S: block size 256, 50 bytes per block
             //   d(2) + qs(32) + qh(4) + signs(12) = 50 bytes
             Self::IQ3_S => blocked_byte_len(n_elements, 256, 50),
-            // IQ3_M: block size 256, 111 bytes per block
-            //   d(2) + hmask(32) + qs(64) + scales(12) + scales_h(1) = 111 bytes
-            Self::IQ3_M => blocked_byte_len(n_elements, 256, 111),
-            // Other opaque / unknown quant types.
+            // Other opaque / unknown quant types (includes wire 31 Q4_0_4_4).
             Self::Other(_) => None,
         }
     }
@@ -518,7 +516,6 @@ mod tests {
             DType::Q6_K,
             DType::Q8_K,
             DType::IQ3_S,
-            DType::IQ3_M,
             DType::BF16,
             DType::F64,
             DType::I8,
@@ -549,7 +546,7 @@ mod tests {
         assert_eq!(ggml_type_label(GGML_TYPE_Q2_K), "Q2_K");
         assert_eq!(ggml_type_label(GGML_TYPE_Q6_K), "Q6_K");
         assert_eq!(ggml_type_label(GGML_TYPE_IQ3_S), "IQ3_S");
-        assert_eq!(ggml_type_label(GGML_TYPE_IQ3_M), "IQ3_M");
+        assert_eq!(ggml_type_label(GGML_TYPE_Q4_0_4_4), "Q4_0_4_4");
         assert_eq!(ggml_type_label(GGML_TYPE_BF16), "BF16");
         assert_eq!(ggml_type_label(GGML_TYPE_F64), "F64");
         assert_eq!(ggml_type_label(GGML_TYPE_I8), "I8");
@@ -588,7 +585,6 @@ mod tests {
             DType::Q4_0,
             DType::Q8_0,
             DType::IQ3_S,
-            DType::IQ3_M,
             DType::BF16,
             DType::F64,
             DType::I8,
@@ -654,10 +650,9 @@ mod tests {
         assert_eq!(DType::IQ3_S.byte_len_for_elements(256), Some(50));
         assert_eq!(DType::IQ3_S.byte_len_for_elements(512), Some(100));
         assert_eq!(DType::IQ3_S.byte_len_for_elements(100), None);
-        // IQ3_M: block_size=256, 111 bytes per block
-        assert_eq!(DType::IQ3_M.byte_len_for_elements(256), Some(111));
-        assert_eq!(DType::IQ3_M.byte_len_for_elements(512), Some(222));
-        assert_eq!(DType::IQ3_M.byte_len_for_elements(100), None);
+        // Wire 31 (Q4_0_4_4) is Other with no known layout
+        assert_eq!(DType::from_ggml_type(31), DType::Other(31));
+        assert_eq!(DType::Other(31).byte_len_for_elements(256), None);
         assert_eq!(DType::Other(99).byte_len_for_elements(100), None);
     }
 
@@ -667,7 +662,7 @@ mod tests {
         assert!(DType::Q8_0.has_known_byte_layout());
         assert!(DType::Q4_K.has_known_byte_layout());
         assert!(DType::IQ3_S.has_known_byte_layout());
-        assert!(DType::IQ3_M.has_known_byte_layout());
+        assert!(!DType::Other(31).has_known_byte_layout());
         assert!(!DType::Other(99).has_known_byte_layout());
     }
 
@@ -702,7 +697,18 @@ mod tests {
         assert_eq!(GGML_TYPE_F64, 28);
         assert_eq!(GGML_TYPE_IQ1_M, 29);
         assert_eq!(GGML_TYPE_BF16, 30);
-        assert_eq!(GGML_TYPE_IQ3_M, 31);
+        assert_eq!(GGML_TYPE_Q4_0_4_4, 31);
+    }
+
+    #[test]
+    fn wire_type_31_is_q4_0_4_4_not_iq3_m() {
+        assert_eq!(GGML_TYPE_Q4_0_4_4, 31);
+        assert_eq!(ggml_type_label(31), "Q4_0_4_4");
+        assert_ne!(ggml_type_label(31), "IQ3_M");
+        let dt = DType::from_ggml_type(31);
+        assert_eq!(dt, DType::Other(31));
+        assert_eq!(dt.byte_len_for_elements(256), None);
+        assert!(!dt.has_known_byte_layout());
     }
 
     #[test]
