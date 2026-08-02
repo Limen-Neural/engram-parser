@@ -279,10 +279,14 @@ fn real_gguf_helpers_document_env() {
     assert_eq!(ENV_MAX, "ENGRAM_GGUF_MAX");
     assert_eq!(ENV_EXPECT_MOE, "ENGRAM_EXPECT_MOE");
     assert_eq!(ENV_MOE_SAMPLES, "ENGRAM_MOE_SAMPLES");
-    // Defaults when env unset (CI-safe).
-    assert!(!expect_moe());
-    assert_eq!(moe_sample_count(), 1);
-    // With no env, pilot list is empty (CI safe).
+    // Defaults only when those vars are unset (local pilot env must not break CI-safe test).
+    if env::var_os(ENV_EXPECT_MOE).is_none() {
+        assert!(!expect_moe());
+    }
+    if env::var_os(ENV_MOE_SAMPLES).is_none() {
+        assert_eq!(moe_sample_count(), 1);
+    }
+    // With no path env, pilot list is empty (CI safe).
     if env::var_os(ENV_GGUF).is_none() && env::var_os(ENV_MODEL_DIR).is_none() {
         assert!(pilot_gguf_paths().is_empty());
     }
