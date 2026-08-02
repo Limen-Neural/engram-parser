@@ -42,10 +42,7 @@ const ENV_MOE_SAMPLES: &str = "ENGRAM_MOE_SAMPLES";
 
 fn expect_moe() -> bool {
     match env::var(ENV_EXPECT_MOE) {
-        Ok(v) => matches!(
-            v.to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        ),
+        Ok(v) => matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"),
         Err(_) => false,
     }
 }

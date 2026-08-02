@@ -151,7 +151,17 @@ cargo test --all-features
 
 # Coverage (local; requires cargo-llvm-cov: cargo install cargo-llvm-cov)
 cargo llvm-cov --all-targets --all-features --locked --lcov --output-path lcov.info
+
+# Real GGUF pilots (xai-dissect style; not CI — needs weights on disk)
+# Full-file load (no mmap): one ENGRAM_GGUF per process; free RAM ≥ file size + margin
+ENGRAM_GGUF=~/.models/gguf/.../model.gguf cargo test --test real_gguf -- --ignored --nocapture
+# Large MoE: ENGRAM_EXPECT_MOE=1 ENGRAM_MOE_SAMPLES=3 (see REVIEW.md T1 large MoE)
+cargo run --example inspect_gguf -- ~/.models/gguf/.../model.gguf
 ```
+
+GPU experiments on real models live in **`~/rmems/blackwell-kernel-lab`**
+(and production kernels in `myelin-accelerator`) — not as deps of this crate.
+See [REVIEW.md](REVIEW.md) for the T0/T1/T2 quality-gate layout.
 
 ## Docker
 
@@ -180,13 +190,16 @@ Cross-reference: #11, #8, #9, #7, #5, LIM-9.
 
 ## MSRV (Minimum Supported Rust Version)
 
-**MSRV: 1.87**
+**MSRV: 1.97** (current stable floor as of 2026-07)
 
-This crate guarantees compatibility with Rust 1.87 and later. The MSRV is:
+This crate guarantees compatibility with Rust 1.97 and later. The MSRV is:
 
-- Declared in `Cargo.toml` via `rust-version = "1.87"`
+- Declared in `Cargo.toml` via `rust-version = "1.97"`
 - Tested in CI on every PR and push (see `msrv` job in `.github/workflows/ci.yml`)
-- Verified alongside stable Rust to ensure both toolchains pass all checks
+- Verified alongside **stable** (always latest) in the `validate` job so both toolchains pass
+
+Local development defaults to the toolchain in [`rust-toolchain.toml`](rust-toolchain.toml)
+(`stable` + `rustfmt` / `clippy`).
 
 **MSRV Policy:**
 - MSRV bumps will be documented in release notes
