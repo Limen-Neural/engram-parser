@@ -44,7 +44,7 @@ pub mod gguf;
 pub mod moe;
 
 // Re-export commonly used types at the crate root for convenience.
-pub use error::ParserError;
+pub use error::{ParserError, Result};
 pub use gguf::{
     DType,
     // GGML type constants

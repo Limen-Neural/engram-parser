@@ -602,6 +602,58 @@ fn quantization_falls_back_to_file_type() {
 }
 
 #[test]
+fn quantization_from_default_metadata_reads_file_type() {
+    use engram_parser::GgufMetadata;
+    let mut meta = GgufMetadata::default();
+    meta.numerics.insert("general.file_type".into(), 0);
+    assert_eq!(meta.quantization(), "F32");
+    meta.numerics.insert("general.file_type".into(), 15);
+    assert_eq!(meta.quantization(), "GGUF(15)");
+    meta.strings
+        .insert("general.quantization_type".into(), "Q8_0".into());
+    assert_eq!(meta.quantization(), "Q8_0");
+}
+
+#[test]
+fn rejects_non_row_aligned_blocked_quant() {
+    // Total elems = 32 (block-aligned) but dims[0]=16 is not divisible by 32.
+    let payload = vec![0u8; 18]; // would be one Q4_0 block if shape were valid
+    let tensors = [TensorSpec {
+        name: "bad.q4_0",
+        dims: vec![16, 2],
+        ggml_type: 2, // Q4_0
+        payload,
+    }];
+    let kv = [("general.architecture", KvValue::Str("test"))];
+    let err = parse_bytes(build_gguf(&kv, &tensors), "mem://bad-row".into()).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("innermost dim") || msg.contains("block size"),
+        "got: {msg}"
+    );
+}
+
+#[test]
+fn rejects_negative_alignment_metadata() {
+    // Hand-built: INT32 general.alignment = -1 must not wrap to huge usize.
+    const VT_INT32: u32 = 5;
+    let mut out = Vec::new();
+    out.extend_from_slice(&GGUF_MAGIC);
+    push_u32(&mut out, GGUF_VERSION);
+    push_u64(&mut out, 0); // tensors
+    push_u64(&mut out, 1); // one KV
+    push_string(&mut out, "general.alignment");
+    push_u32(&mut out, VT_INT32);
+    out.extend_from_slice(&(-1i32).to_le_bytes());
+    let err = parse_bytes(out, "mem://neg-align".into()).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("negative") || msg.contains("InvalidLayout"),
+        "got: {msg}"
+    );
+}
+
+#[test]
 fn parses_iq3_s_tensor_layout() {
     // IQ3_S: 256 elements per block, 110 bytes/block (GGUF wire layout).
     let n = 256usize;

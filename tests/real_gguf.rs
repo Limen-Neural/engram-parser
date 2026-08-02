@@ -77,20 +77,17 @@ fn pilot_gguf_paths() -> Vec<PathBuf> {
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(8);
 
+    // Collect the full candidate set first, then sort and cap — `read_dir`
+    // order is unspecified, so capping during walk is non-reproducible.
     let mut out = Vec::new();
-    collect_gguf(&root, 0, 6, max, &mut out);
+    collect_gguf(&root, 0, 6, &mut out);
     out.sort();
+    out.truncate(max);
     out
 }
 
-fn collect_gguf(
-    dir: &Path,
-    depth: usize,
-    max_depth: usize,
-    max_files: usize,
-    out: &mut Vec<PathBuf>,
-) {
-    if out.len() >= max_files || depth > max_depth {
+fn collect_gguf(dir: &Path, depth: usize, max_depth: usize, out: &mut Vec<PathBuf>) {
+    if depth > max_depth {
         return;
     }
     let Ok(entries) = fs::read_dir(dir) else {
@@ -98,9 +95,6 @@ fn collect_gguf(
     };
     let mut dirs = Vec::new();
     for entry in entries.flatten() {
-        if out.len() >= max_files {
-            break;
-        }
         let path = entry.path();
         if path.is_file() {
             if path
@@ -116,10 +110,7 @@ fn collect_gguf(
     }
     dirs.sort();
     for d in dirs {
-        collect_gguf(&d, depth + 1, max_depth, max_files, out);
-        if out.len() >= max_files {
-            break;
-        }
+        collect_gguf(&d, depth + 1, max_depth, out);
     }
 }
 

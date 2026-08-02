@@ -44,10 +44,11 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let parse_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    // Includes full-file read + parse (not parse-only).
+    let load_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
     println!("path:          {}", path.display());
-    println!("parse_ms:      {parse_ms:.2}");
+    println!("load_ms:       {load_ms:.2}");
     println!("architecture:  {}", layout.metadata.architecture());
     println!("quantization:  {}", layout.metadata.quantization());
     println!("alignment:     {}", layout.alignment);

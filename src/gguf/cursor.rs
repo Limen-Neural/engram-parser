@@ -24,6 +24,19 @@ pub(crate) fn invalid_layout(path: &str, reason: impl Into<String>) -> ParserErr
     }
 }
 
+/// Coerce a signed integer into a layout/numeric `u64`, rejecting negatives.
+///
+/// GGUF KV values used as counts/alignment must not wrap via two's complement
+/// (e.g. `general.alignment = -1` becoming `usize::MAX`).
+fn nonneg_i64_as_u64(path: &str, v: i64) -> Result<u64> {
+    u64::try_from(v).map_err(|_| {
+        invalid_layout(
+            path,
+            format!("signed GGUF numeric value {v} is negative; expected non-negative"),
+        )
+    })
+}
+
 pub const GGUF_VALUE_TYPE_UINT8: u32 = 0;
 pub const GGUF_VALUE_TYPE_INT8: u32 = 1;
 pub const GGUF_VALUE_TYPE_UINT16: u32 = 2;
@@ -152,7 +165,8 @@ impl<'a> GgufCursor<'a> {
     }
 
     fn read_i8_as_u64(&mut self) -> Result<u64> {
-        Ok(self.read_u8()? as i8 as i64 as u64)
+        let v = self.read_u8()? as i8;
+        nonneg_i64_as_u64(self.path, i64::from(v))
     }
 
     fn read_u16_as_u64(&mut self) -> Result<u64> {
@@ -160,7 +174,8 @@ impl<'a> GgufCursor<'a> {
     }
 
     fn read_i16_as_u64(&mut self) -> Result<u64> {
-        Ok(self.read_i16()? as i64 as u64)
+        let v = self.read_i16()?;
+        nonneg_i64_as_u64(self.path, i64::from(v))
     }
 
     fn read_u32_as_u64(&mut self) -> Result<u64> {
@@ -168,11 +183,13 @@ impl<'a> GgufCursor<'a> {
     }
 
     fn read_i32_as_u64(&mut self) -> Result<u64> {
-        Ok(self.read_i32()? as i64 as u64)
+        let v = self.read_i32()?;
+        nonneg_i64_as_u64(self.path, i64::from(v))
     }
 
     fn read_i64_as_u64(&mut self) -> Result<u64> {
-        Ok(self.read_i64()? as u64)
+        let v = self.read_i64()?;
+        nonneg_i64_as_u64(self.path, v)
     }
 
     /// Read a numeric-typed GGUF value and coerce it to `usize`.

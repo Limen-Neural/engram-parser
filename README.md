@@ -105,11 +105,12 @@ for (block, expert) in list_experts(&layout) {
 
 Layout-aware parsing (**packed byte sizes only — no dequant, no GGML
 compute**) for GGUF wire types: `F32`, `F16`, `BF16` (30), `F64`,
-`I8`–`I64`, `Q4_0`/`Q4_1`, `Q5_0`/`Q5_1`, `Q8_0`/`Q8_1`, `Q2_K`–`Q8_K`,
-and IQ packed layouts `IQ2_XXS`/`IQ2_XS`/`IQ2_S`, `IQ3_XXS`/`IQ3_S`,
-`IQ1_S`/`IQ1_M`, `IQ4_NL`/`IQ4_XS`. Remaining codes use
-`DType::Other(u32)` (including historical **wire type 31 = `Q4_0_4_4`**,
-which is **not** HF “IQ3_M” and fails closed without a modeled size).
+`I8`–`I64`, `Q4_0`/`Q4_1`, `Q5_0`/`Q5_1`, `Q8_0`/`Q8_1`, K-quants
+`Q2_K`/`Q3_K`/`Q4_K`/`Q5_K`/`Q6_K`/`Q8_K` (no `Q7_K`), and IQ packed
+layouts `IQ2_XXS`/`IQ2_XS`/`IQ2_S`, `IQ3_XXS`/`IQ3_S`, `IQ1_S`/`IQ1_M`,
+`IQ4_NL`/`IQ4_XS`. Remaining codes use `DType::Other(u32)` (including
+historical **wire type 31 = `Q4_0_4_4`**, which is **not** HF “IQ3_M”
+and fails closed without a modeled size).
 
 Only `F32` and `F16` have in-crate numeric accessors; everything else
 is returned as raw `Vec<u8>`. Unknown layouts fail closed at parse time

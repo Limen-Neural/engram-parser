@@ -296,39 +296,47 @@ impl DType {
 
     /// Short human-readable label for this dtype (e.g. `"F32"`, `"Q4_K"`).
     ///
-    /// Delegates to [`ggml_type_label`] for `Other(code)` variants.
+    /// Single source of truth: [`ggml_type_label`] on the wire code.
     pub fn label(self) -> &'static str {
+        ggml_type_label(self.ggml_type())
+    }
+
+    /// Quantization block length along the innermost GGUF dimension, if any.
+    ///
+    /// Used to reject shapes whose `dims[0]` cannot form complete blocks.
+    /// `None` for dense/integer types and unknown/`Other` codes.
+    pub fn quant_block_size(self) -> Option<usize> {
         match self {
-            Self::F32 => "F32",
-            Self::F16 => "F16",
-            Self::Q4_0 => "Q4_0",
-            Self::Q4_1 => "Q4_1",
-            Self::Q5_0 => "Q5_0",
-            Self::Q5_1 => "Q5_1",
-            Self::Q8_0 => "Q8_0",
-            Self::Q8_1 => "Q8_1",
-            Self::Q2_K => "Q2_K",
-            Self::Q3_K => "Q3_K",
-            Self::Q4_K => "Q4_K",
-            Self::Q5_K => "Q5_K",
-            Self::Q6_K => "Q6_K",
-            Self::Q8_K => "Q8_K",
-            Self::IQ2_XXS => "IQ2_XXS",
-            Self::IQ2_XS => "IQ2_XS",
-            Self::IQ3_XXS => "IQ3_XXS",
-            Self::IQ1_S => "IQ1_S",
-            Self::IQ4_NL => "IQ4_NL",
-            Self::IQ3_S => "IQ3_S",
-            Self::IQ2_S => "IQ2_S",
-            Self::IQ4_XS => "IQ4_XS",
-            Self::IQ1_M => "IQ1_M",
-            Self::BF16 => "BF16",
-            Self::F64 => "F64",
-            Self::I8 => "I8",
-            Self::I16 => "I16",
-            Self::I32 => "I32",
-            Self::I64 => "I64",
-            Self::Other(code) => ggml_type_label(code),
+            Self::Q4_0
+            | Self::Q4_1
+            | Self::Q5_0
+            | Self::Q5_1
+            | Self::Q8_0
+            | Self::Q8_1
+            | Self::IQ4_NL => Some(32),
+            Self::Q2_K
+            | Self::Q3_K
+            | Self::Q4_K
+            | Self::Q5_K
+            | Self::Q6_K
+            | Self::Q8_K
+            | Self::IQ2_XXS
+            | Self::IQ2_XS
+            | Self::IQ2_S
+            | Self::IQ3_XXS
+            | Self::IQ3_S
+            | Self::IQ1_S
+            | Self::IQ1_M
+            | Self::IQ4_XS => Some(256),
+            Self::F32
+            | Self::F16
+            | Self::BF16
+            | Self::F64
+            | Self::I8
+            | Self::I16
+            | Self::I32
+            | Self::I64
+            | Self::Other(_) => None,
         }
     }
 

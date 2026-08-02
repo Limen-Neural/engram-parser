@@ -24,7 +24,8 @@ Run from the **repo root** (`engram-parser` checkout, e.g. branch
 (`cargo fmt` fails with `could not find Cargo.toml` if you run it elsewhere).
 
 ```bash
-cd ~/Limen-Neural/engram-parser
+# From any checkout of this repo (requires Cargo.toml in the tree):
+cd "$(git rev-parse --show-toplevel)"
 
 # 0) Ensure rustfmt is installed for this toolchain (once per toolchain)
 rustup component add rustfmt

@@ -36,9 +36,6 @@ pub struct GgufMetadata {
     pub floats_32: HashMap<String, f32>,
     /// `f64`-typed KV pairs.
     pub floats_64: HashMap<String, f64>,
-    /// Derived label from `general.file_type` when
-    /// `general.quantization_type` is absent (e.g. `"F32"`, `"GGUF(15)"`).
-    quantization_from_file_type: Option<String>,
 }
 
 impl GgufMetadata {
@@ -58,16 +55,20 @@ impl GgufMetadata {
     /// Convenience: quantization label.
     ///
     /// Prefers the string KV `general.quantization_type`. When that is
-    /// missing, falls back to `general.file_type` (GGUF numeric enum):
-    /// `0 → "F32"`, `1 → "F16"`, otherwise `"GGUF(n)"`. Returns
-    /// `"unknown"` when neither is present.
-    pub fn quantization(&self) -> &str {
+    /// missing, falls back to the **current** `general.file_type` numeric
+    /// (GGUF enum): `0 → "F32"`, `1 → "F16"`, otherwise `"GGUF(n)"`.
+    /// Returns `"unknown"` when neither is present. Derived at call time
+    /// so `Default` + public map edits stay consistent.
+    pub fn quantization(&self) -> String {
         if let Some(s) = self.strings.get("general.quantization_type") {
-            return s.as_str();
+            return s.clone();
         }
-        self.quantization_from_file_type
-            .as_deref()
-            .unwrap_or("unknown")
+        match self.numerics.get("general.file_type").copied() {
+            Some(0) => "F32".into(),
+            Some(1) => "F16".into(),
+            Some(n) => format!("GGUF({n})"),
+            None => "unknown".into(),
+        }
     }
 
     /// Convenience: numeric KV coerced to `usize`, looking up
@@ -281,24 +282,7 @@ fn read_metadata_section(
         }
     }
 
-    finalize_quantization_from_file_type(&mut metadata);
     Ok((alignment, metadata))
-}
-
-/// When `general.quantization_type` is absent, derive a display label
-/// from `general.file_type` (common in real GGUF writers).
-fn finalize_quantization_from_file_type(metadata: &mut GgufMetadata) {
-    if metadata.strings.contains_key("general.quantization_type") {
-        return;
-    }
-    let Some(&file_type) = metadata.numerics.get("general.file_type") else {
-        return;
-    };
-    metadata.quantization_from_file_type = Some(match file_type {
-        0 => "F32".into(),
-        1 => "F16".into(),
-        other => format!("GGUF({other})"),
-    });
 }
 
 fn read_tensor_directory(
@@ -321,6 +305,7 @@ fn read_tensor_entry(cursor: &mut GgufCursor<'_>, path: &str) -> Result<Tensor> 
     let relative_offset = cursor.read_u64()? as usize;
     let dtype = DType::from_ggml_type(ggml_type);
     let n_elements = tensor_element_count(&dims, &name, path)?;
+    validate_blocked_inner_dim(dtype, &dims, &name, path)?;
     let byte_len = tensor_byte_len(dtype, ggml_type, n_elements, &name, path)?;
 
     Ok(Tensor {
@@ -333,6 +318,29 @@ fn read_tensor_entry(cursor: &mut GgufCursor<'_>, path: &str) -> Result<Tensor> 
         relative_offset,
         absolute_offset: 0,
     })
+}
+
+/// Blocked quant layouts pack along the **innermost** GGUF dim (`dims[0]`).
+/// Total element count alone can accept shapes that cannot form valid blocks
+/// per row (e.g. Q4_0 with dims `[16, 2]` → 32 elems but row len 16).
+fn validate_blocked_inner_dim(dtype: DType, dims: &[usize], name: &str, path: &str) -> Result<()> {
+    let Some(block) = dtype.quant_block_size() else {
+        return Ok(());
+    };
+    let Some(&inner) = dims.first() else {
+        return Ok(());
+    };
+    if inner.is_multiple_of(block) {
+        return Ok(());
+    }
+    Err(invalid_layout(
+        path,
+        format!(
+            "tensor '{name}' innermost dim {inner} is not divisible by \
+             quant block size {block} for dtype {}",
+            dtype.label()
+        ),
+    ))
 }
 
 fn read_tensor_dims(cursor: &mut GgufCursor<'_>, path: &str, name: &str) -> Result<Vec<usize>> {

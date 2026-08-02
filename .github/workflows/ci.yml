@@ -85,6 +85,10 @@ jobs:
     name: MSRV (1.97.1)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Override repo `rust-toolchain.toml` (channel=stable) so this job truly
+    # exercises MSRV, not latest stable.
+    env:
+      RUSTUP_TOOLCHAIN: "1.97.1"
     steps:
       # actions/checkout@v7.0.0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -104,6 +108,11 @@ jobs:
         with:
           shared-key: "msrv-v1.97.1"
           cache-on-failure: true
+
+      - name: Confirm MSRV toolchain is active
+        run: |
+          rustc --version | grep -F '1.97.1'
+          cargo --version
 
       - name: Check formatting
         run: cargo fmt --check
