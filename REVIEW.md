@@ -4,7 +4,8 @@ Local commands that must pass before merge or PR for this crate.
 Aligned with `.github/workflows/ci.yml` and the README Development section.
 
 **Charter:** pure-Rust, **zero-dependency** GGUF v3 parse + MoE raw expert
-extract. **No CUDA, dequant, or mmap in this repo.**
+extract. **No CUDA, dequant, mmap, or GGML compute** in this repo. GGUF’s
+on-wire `ggml_type` codes are metadata only (labels + packed sizes).
 
 | Repo | Role |
 |------|------|

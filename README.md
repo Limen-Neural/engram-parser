@@ -74,10 +74,14 @@ implementation (**no** runtime dependency on corinth-canal).
 - Cortex coordination: [cortex-tensor#8](https://github.com/Limen-Neural/cortex-tensor/issues/8)
 - Linear: [LIM-123](https://linear.app/rpd-34/issue/LIM-123), [LIM-88](https://linear.app/rpd-34/issue/LIM-88)
 
-Wire-type labels follow the corinth-canal `ggml` table (e.g. type **31** is
-historical `Q4_0_4_4`, not the HuggingFace “IQ3_M” preset). MoE extraction
-remains free functions (`list_experts` / `extract_expert`); traits are out
-of scope for #7.
+**GGUF wire types vs “GGML”:** GGUF stores each tensor’s dtype as a
+`ggml_type` integer. This crate only maps those codes to labels and packed
+**byte sizes** so payloads and MoE slices stay in-range. It does **not**
+implement GGML dequant, kernels, or the ggml runtime (that stays
+downstream / corinth-canal reference). Wire-type labels follow the
+corinth-canal table (e.g. type **31** is historical `Q4_0_4_4`, not the
+HuggingFace “IQ3_M” preset). MoE extraction remains free functions
+(`list_experts` / `extract_expert`); traits are out of scope for #7.
 
 ## Quick start
 
@@ -99,13 +103,13 @@ for (block, expert) in list_experts(&layout) {
 
 ## Supported dtypes
 
-Layout-aware parsing (byte sizes only — **no dequant**) for GGUF wire types:
-`F32`, `F16`, `BF16` (30), `F64`, `I8`–`I64`, `Q4_0`/`Q4_1`,
-`Q5_0`/`Q5_1`, `Q8_0`/`Q8_1`, `Q2_K`–`Q8_K`, and IQ wire layouts
-`IQ2_XXS`/`IQ2_XS`/`IQ2_S`, `IQ3_XXS`/`IQ3_S`, `IQ1_S`/`IQ1_M`,
-`IQ4_NL`/`IQ4_XS`. Remaining codes use `DType::Other(u32)` (including
-historical **wire type 31 = `Q4_0_4_4`**, which is **not** HF “IQ3_M”
-and fails closed without a modeled size).
+Layout-aware parsing (**packed byte sizes only — no dequant, no GGML
+compute**) for GGUF wire types: `F32`, `F16`, `BF16` (30), `F64`,
+`I8`–`I64`, `Q4_0`/`Q4_1`, `Q5_0`/`Q5_1`, `Q8_0`/`Q8_1`, `Q2_K`–`Q8_K`,
+and IQ packed layouts `IQ2_XXS`/`IQ2_XS`/`IQ2_S`, `IQ3_XXS`/`IQ3_S`,
+`IQ1_S`/`IQ1_M`, `IQ4_NL`/`IQ4_XS`. Remaining codes use
+`DType::Other(u32)` (including historical **wire type 31 = `Q4_0_4_4`**,
+which is **not** HF “IQ3_M” and fails closed without a modeled size).
 
 Only `F32` and `F16` have in-crate numeric accessors; everything else
 is returned as raw `Vec<u8>`. Unknown layouts fail closed at parse time

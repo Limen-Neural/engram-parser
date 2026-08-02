@@ -8,7 +8,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-- Full GGML IQ/Q wire layouts and `byte_len` coverage for known quant types.
+- GGUF tensor **wire-type** layouts (IQ/Q codes + packed `byte_len` only — **no dequant**).
 - `file_type` metadata fallback for quantization label when general quant keys are absent.
 - Path-gated **T1** real-GGUF pilots (`tests/real_gguf.rs`) with optional
   `ENGRAM_EXPECT_MOE` / `ENGRAM_MOE_SAMPLES`.
@@ -28,7 +28,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
-- Wire-type 31 labeling aligned with corinth-canal GGML reference.
+- Wire-type 31 labeling aligned with corinth-canal’s GGUF/`ggml_type` table (metadata only).
 
 ## [0.1.0] - 2026-06-01
 

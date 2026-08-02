@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Tensor directory entry + dtype enumeration + GGML type helpers.
+//! Tensor directory entry + dtype enumeration + GGUF wire-type helpers.
 //!
 //! A [`Tensor`] is a pure-metadata descriptor: name, shape, dtype, and
 //! byte offset within the file. It owns no weight data itself — callers
 //! pass it back to [`GgufLayout::tensor_bytes`](super::layout::GgufLayout::tensor_bytes)
 //! to obtain the raw `&[u8]` payload.
 //!
-//! ## GGML type constants
+//! ## GGUF `ggml_type` codes (metadata only)
 //!
-//! The `GGML_TYPE_*` constants mirror the `ggml.h` enum and cover every
-//! dtype that has appeared in a GGUF v3 checkpoint to date. The
-//! [`ggml_type_label`] helper maps any `u32` code to a short human
-//! string for diagnostics.
+//! GGUF stores each tensor’s dtype as a `ggml_type` `u32`. The
+//! `GGML_TYPE_*` constants mirror that table (same numbers as `ggml.h`)
+//! so we can label types and compute **packed byte lengths**. This module
+//! does **not** implement dequantization or any GGML compute path.
+//! [`ggml_type_label`] maps any `u32` code to a short diagnostic string.
 
 use crate::error::{ParserError, Result};
 

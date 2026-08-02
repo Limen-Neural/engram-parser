@@ -10,12 +10,13 @@
 //!
 //! - **Zero dependencies**: Pure Rust implementation with no external crates
 //! - **GGUF v3 support**: Full parsing of headers, metadata, and tensor directories
-//! - **Comprehensive dtype support**: All GGML tensor types including F32, F16, BF16,
-//!   Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, Q8_1, Q2_K through Q8_K, IQ1_S through IQ4_XS,
-//!   integers (I8–I64, F64), plus historical wire type 31 as labeled `Q4_0_4_4`
-//!   via [`DType::Other`]
-//! - **Type labels**: Human-readable names for all GGML types via [`ggml_type_label`]
-//! - **MoE support**: Extract expert weights and analyze mixture-of-experts architectures
+//! - **GGUF wire-type metadata**: labels + packed `byte_len` for known quant
+//!   codes (F32/F16/BF16, Q*/IQ*, integers, historical wire 31 = `Q4_0_4_4`).
+//!   **No dequant, no GGML kernels, no ggml runtime** — only what the GGUF
+//!   directory needs for in-range payloads and MoE raw slices.
+//! - **Type labels**: Human-readable names via [`ggml_type_label`] (maps the
+//!   on-wire `ggml_type` integer used by GGUF)
+//! - **MoE support**: Extract expert **raw** weights (byte buffers + shape)
 //! - **Metadata helpers**: Architecture-aware convenience methods for common fields
 //!
 //! # Example
