@@ -86,7 +86,7 @@ rustup show
 rustup component add rustfmt
 # or pin explicitly:
 rustup component add rustfmt --toolchain stable
-rustup component add rustfmt --toolchain 1.97   # for MSRV checks
+rustup component add rustfmt --toolchain 1.97.1   # for MSRV checks
 
 # Confirm the binary cargo will call
 cargo fmt --version
@@ -102,7 +102,7 @@ so `rustup` / `cargo` in this directory use latest stable automatically.
 |---------|-----|
 | `could not find Cargo.toml` | `cd` into `engram-parser` first |
 | `'cargo-fmt' is not installed` / missing rustfmt | `rustup component add rustfmt` |
-| Wrong toolchain (old rustfmt, edition 2024 issues) | Use stable ≥ MSRV **1.97**: `rustup update stable` or `cargo +stable fmt` |
+| Wrong toolchain (old rustfmt, edition 2024 issues) | Use stable ≥ MSRV **1.97.1**: `rustup update stable` or `cargo +stable fmt` |
 | “Nothing happened” after `cargo fmt` | Tree was already formatted; use `cargo fmt --check` (expect exit 0) or `cargo fmt -v` |
 | `--check` prints diffs | Run `cargo fmt` (no `--check`) once, then commit |
 
@@ -120,8 +120,8 @@ There is no `rustfmt.toml` in this repo; defaults are fine.
 | `test` | `cargo test --all-features` | Unit (`src/gguf/tensor.rs`), smoke (`tests/gguf_smoke.rs`), doctests |
 | `clean-tree` | `git status --porcelain` empty | No stray outputs after build/test |
 | `coverage` (opt) | `cargo llvm-cov --all-targets --all-features --locked --lcov --output-path lcov.info` | LCOV for Codecov (CI installs `cargo-llvm-cov`) |
-| `msrv` (opt) | toolchain **1.97** + same fmt/clippy/build/test | Matches `rust-version` / CI `msrv` job |
-| `docker` (opt) | `docker build -t engram-parser .` then `docker run --rm engram-parser` | Image uses `RUST_VERSION=1.97` |
+| `msrv` (opt) | toolchain **1.97.1** + same fmt/clippy/build/test | Matches `rust-version` / CI `msrv` job |
+| `docker` (opt) | `docker build -t engram-parser .` then `docker run --rm engram-parser` | Image uses `RUST_VERSION=1.97.1` |
 
 ### Coverage (local)
 
@@ -161,19 +161,19 @@ cargo llvm-cov --version
 **You must install the MSRV toolchain first.** If you skip this, you get:
 
 ```text
-error: toolchain '1.97-x86_64-unknown-linux-gnu' is not installed
-help: run `rustup toolchain install 1.97` ...
+error: toolchain '1.97.1-x86_64-unknown-linux-gnu' is not installed
+help: run `rustup toolchain install 1.97.1` ...
 ```
 
 **One-time setup:**
 
 ```bash
-# Install the MSRV channel (resolves to latest 1.97.x patch, e.g. 1.97.1)
-rustup toolchain install 1.97 --component rustfmt,clippy
+# Install the exact MSRV pin (matches Cargo.toml rust-version / CI msrv job)
+rustup toolchain install 1.97.1 --component rustfmt,clippy
 
-# Confirm cargo can see it (must print a 1.97.x version)
-cargo +1.97 -V
-rustc +1.97 -V
+# Confirm cargo can see it (must print 1.97.1)
+cargo +1.97.1 -V
+rustc +1.97.1 -V
 ```
 
 **Then build/test on MSRV** (from repo root):
@@ -182,34 +182,34 @@ rustc +1.97 -V
 cd ~/Limen-Neural/engram-parser
 
 # Preferred: explicit +toolchain (overrides rust-toolchain.toml for this command)
-cargo +1.97 fmt --check
-cargo +1.97 clippy --all-targets --all-features -- -D warnings
-cargo +1.97 build --all-features
-cargo +1.97 test --all-features
+cargo +1.97.1 fmt --check
+cargo +1.97.1 clippy --all-targets --all-features -- -D warnings
+cargo +1.97.1 build --all-features
+cargo +1.97.1 test --all-features
 ```
 
-**Alternatives if `+1.97` is awkward in an IDE/script:**
+**Alternatives if `+1.97.1` is awkward in an IDE/script:**
 
 ```bash
 # Same effect via env (also overrides directory rust-toolchain.toml)
-RUSTUP_TOOLCHAIN=1.97 cargo build --all-features
-RUSTUP_TOOLCHAIN=1.97 cargo test --all-features
+RUSTUP_TOOLCHAIN=1.97.1 cargo build --all-features
+RUSTUP_TOOLCHAIN=1.97.1 cargo test --all-features
 
 # Or rustup run
-rustup run 1.97 cargo test --all-features
+rustup run 1.97.1 cargo test --all-features
 ```
 
 **When MSRV == current stable (today: both 1.97.x):** plain `cargo build` /
 `cargo test` already use stable via `rust-toolchain.toml` and are enough for
-day-to-day work. Use `+1.97` only when you want an explicit MSRV gate matching
+day-to-day work. Use `+1.97.1` only when you want an explicit MSRV gate matching
 the CI `msrv` job.
 
 | Symptom | Fix |
 |---------|-----|
-| `toolchain '1.97' is not installed` | `rustup toolchain install 1.97 --component rustfmt,clippy` |
-| `+1.97` ignored / still wrong version | Prefer `cargo +1.97 -V` to verify; or `RUSTUP_TOOLCHAIN=1.97` |
-| `clippy-driver` / rustfmt missing on 1.97 | `rustup component add clippy rustfmt --toolchain 1.97` |
-| IDE “Cargo” has no `+1.97` | Set env `RUSTUP_TOOLCHAIN=1.97` in the run config, or use the terminal |
+| `toolchain '1.97.1' is not installed` | `rustup toolchain install 1.97.1 --component rustfmt,clippy` |
+| `+1.97.1` ignored / still wrong version | Prefer `cargo +1.97.1 -V` to verify; or `RUSTUP_TOOLCHAIN=1.97.1` |
+| `clippy-driver` / rustfmt missing on 1.97.1 | `rustup component add clippy rustfmt --toolchain 1.97.1` |
+| IDE “Cargo” has no `+1.97.1` | Set env `RUSTUP_TOOLCHAIN=1.97.1` in the run config, or use the terminal |
 ---
 
 ## 3. What `cargo test` covers (this branch)
@@ -353,9 +353,9 @@ cargo run --locked --example benchmark --profile bench --features bench,cuda
 | Local step | Workflow job |
 |------------|----------------|
 | fmt, clippy, build, test (T0 only), clean-tree, llvm-cov | `validate` in `.github/workflows/ci.yml` (**stable** = latest) |
-| MSRV 1.97 fmt/clippy/build/test | `msrv` in `.github/workflows/ci.yml` (pinned `toolchain: "1.97"`) |
+| MSRV 1.97.1 fmt/clippy/build/test | `msrv` in `.github/workflows/ci.yml` (pinned `toolchain: "1.97.1"`) |
 | Security audit / Snyk | `.github/workflows/security.yml` (not required for every local edit) |
-| Docker image | `Dockerfile` (`ARG RUST_VERSION=1.97`) + `.github/workflows/docker-build.yml` |
+| Docker image | `Dockerfile` (`ARG RUST_VERSION=1.97.1`) + `.github/workflows/docker-build.yml` |
 | T1 real GGUF / T2 GPU | **Not in CI** — local pilots only |
 
 **Yes, the GitHub workflow is part of a Rust version bump:** keep `validate` on

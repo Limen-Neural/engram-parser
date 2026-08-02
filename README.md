@@ -190,11 +190,11 @@ Cross-reference: #11, #8, #9, #7, #5, LIM-9.
 
 ## MSRV (Minimum Supported Rust Version)
 
-**MSRV: 1.97** (current stable floor as of 2026-07)
+**MSRV: 1.97.1** (current stable floor as of 2026-08)
 
-This crate guarantees compatibility with Rust 1.97 and later. The MSRV is:
+This crate guarantees compatibility with Rust 1.97.1 and later. The MSRV is:
 
-- Declared in `Cargo.toml` via `rust-version = "1.97"`
+- Declared in `Cargo.toml` via `rust-version = "1.97.1"`
 - Tested in CI on every PR and push (see `msrv` job in `.github/workflows/ci.yml`)
 - Verified alongside **stable** (always latest) in the `validate` job so both toolchains pass
 
