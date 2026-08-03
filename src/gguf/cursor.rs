@@ -24,19 +24,6 @@ pub(crate) fn invalid_layout(path: &str, reason: impl Into<String>) -> ParserErr
     }
 }
 
-/// Coerce a signed integer into a layout/numeric `u64`, rejecting negatives.
-///
-/// GGUF KV values used as counts/alignment must not wrap via two's complement
-/// (e.g. `general.alignment = -1` becoming `usize::MAX`).
-fn nonneg_i64_as_u64(path: &str, v: i64) -> Result<u64> {
-    u64::try_from(v).map_err(|_| {
-        invalid_layout(
-            path,
-            format!("signed GGUF numeric value {v} is negative; expected non-negative"),
-        )
-    })
-}
-
 pub const GGUF_VALUE_TYPE_UINT8: u32 = 0;
 pub const GGUF_VALUE_TYPE_INT8: u32 = 1;
 pub const GGUF_VALUE_TYPE_UINT16: u32 = 2;
@@ -50,6 +37,15 @@ pub const GGUF_VALUE_TYPE_ARRAY: u32 = 9;
 pub const GGUF_VALUE_TYPE_UINT64: u32 = 10;
 pub const GGUF_VALUE_TYPE_INT64: u32 = 11;
 pub const GGUF_VALUE_TYPE_FLOAT64: u32 = 12;
+
+fn nonneg_signed(path: &str, v: i64) -> Result<u64> {
+    u64::try_from(v).map_err(|_| {
+        invalid_layout(
+            path,
+            format!("signed layout value {v} is negative; expected non-negative"),
+        )
+    })
+}
 
 pub(crate) struct GgufCursor<'a> {
     bytes: &'a [u8],
@@ -165,8 +161,8 @@ impl<'a> GgufCursor<'a> {
     }
 
     fn read_i8_as_u64(&mut self) -> Result<u64> {
-        let v = self.read_u8()? as i8;
-        nonneg_i64_as_u64(self.path, i64::from(v))
+        // Bit-preserving cast: vendor metadata may be negative; do not reject here.
+        Ok(self.read_u8()? as i8 as i64 as u64)
     }
 
     fn read_u16_as_u64(&mut self) -> Result<u64> {
@@ -174,8 +170,7 @@ impl<'a> GgufCursor<'a> {
     }
 
     fn read_i16_as_u64(&mut self) -> Result<u64> {
-        let v = self.read_i16()?;
-        nonneg_i64_as_u64(self.path, i64::from(v))
+        Ok(self.read_i16()? as i64 as u64)
     }
 
     fn read_u32_as_u64(&mut self) -> Result<u64> {
@@ -183,18 +178,46 @@ impl<'a> GgufCursor<'a> {
     }
 
     fn read_i32_as_u64(&mut self) -> Result<u64> {
-        let v = self.read_i32()?;
-        nonneg_i64_as_u64(self.path, i64::from(v))
+        Ok(self.read_i32()? as i64 as u64)
     }
 
     fn read_i64_as_u64(&mut self) -> Result<u64> {
-        let v = self.read_i64()?;
-        nonneg_i64_as_u64(self.path, v)
+        Ok(self.read_i64()? as u64)
     }
 
-    /// Read a numeric-typed GGUF value and coerce it to `usize`.
-    pub(crate) fn read_numeric_as_usize(&mut self, value_type: u32) -> Result<usize> {
-        Ok(self.read_numeric_as_u64(value_type)? as usize)
+    /// Read a non-negative layout value (e.g. `general.alignment`).
+    ///
+    /// Rejects signed negatives so they do not wrap into huge alignments.
+    /// Other signed KV pairs should use [`Self::read_numeric_as_u64`] instead.
+    pub(crate) fn read_nonneg_layout_usize(&mut self, value_type: u32) -> Result<usize> {
+        let v = match value_type {
+            GGUF_VALUE_TYPE_UINT8 => self.read_u8()? as u64,
+            GGUF_VALUE_TYPE_UINT16 => self.read_u16()? as u64,
+            GGUF_VALUE_TYPE_UINT32 => self.read_u32()? as u64,
+            GGUF_VALUE_TYPE_UINT64 | GGUF_VALUE_TYPE_BOOL => self.read_u64()?,
+            GGUF_VALUE_TYPE_INT8 => {
+                let s = self.read_u8()? as i8;
+                nonneg_signed(self.path, i64::from(s))?
+            }
+            GGUF_VALUE_TYPE_INT16 => {
+                let s = self.read_i16()?;
+                nonneg_signed(self.path, i64::from(s))?
+            }
+            GGUF_VALUE_TYPE_INT32 => {
+                let s = self.read_i32()?;
+                nonneg_signed(self.path, i64::from(s))?
+            }
+            GGUF_VALUE_TYPE_INT64 => {
+                let s = self.read_i64()?;
+                nonneg_signed(self.path, s)?
+            }
+            other => {
+                return Err(self.unsupported(format!(
+                    "expected integer GGUF value for layout field, got type {other}"
+                )));
+            }
+        };
+        Ok(v as usize)
     }
 
     /// Render a scalar GGUF value as a string (used for metadata KV).

@@ -654,6 +654,27 @@ fn rejects_negative_alignment_metadata() {
 }
 
 #[test]
+fn accepts_negative_vendor_signed_metadata() {
+    // Non-layout signed KVs may be negative; must not fail the whole file.
+    const VT_INT32: u32 = 5;
+    let mut out = Vec::new();
+    out.extend_from_slice(&GGUF_MAGIC);
+    push_u32(&mut out, GGUF_VERSION);
+    push_u64(&mut out, 0);
+    push_u64(&mut out, 1);
+    push_string(&mut out, "vendor.custom_signed");
+    push_u32(&mut out, VT_INT32);
+    out.extend_from_slice(&(-7i32).to_le_bytes());
+    let layout = parse_bytes(out, "mem://neg-vendor".into()).expect("parse");
+    // Bit-preserving cast of -7 as i32 → u64.
+    let expected = (-7i32) as i64 as u64;
+    assert_eq!(
+        layout.metadata.numerics.get("vendor.custom_signed"),
+        Some(&expected)
+    );
+}
+
+#[test]
 fn parses_iq3_s_tensor_layout() {
     // IQ3_S: 256 elements per block, 110 bytes/block (GGUF wire layout).
     let n = 256usize;

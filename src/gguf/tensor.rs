@@ -403,6 +403,23 @@ impl DType {
     pub fn has_known_byte_layout(self) -> bool {
         !matches!(self, Self::Other(_))
     }
+
+    /// Whether the dtype is a plain (non-quantized) float layout.
+    ///
+    /// Matches the 0.1 surface: `F32`, `F16`, and `BF16` (not `F64`).
+    pub fn is_float(self) -> bool {
+        matches!(self, Self::F32 | Self::F16 | Self::BF16)
+    }
+
+    /// Byte width of a single dense element, or `None` for block-quantized
+    /// / integer / unknown dtypes (same contract as 0.1).
+    pub fn element_size(self) -> Option<usize> {
+        match self {
+            Self::F32 => Some(4),
+            Self::F16 | Self::BF16 => Some(2),
+            _ => None,
+        }
+    }
 }
 
 /// Compute the total byte length for a blocked quantization format.

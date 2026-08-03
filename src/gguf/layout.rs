@@ -276,7 +276,8 @@ fn read_metadata_section(
         let key = cursor.read_string()?;
         let value_type = cursor.read_u32()?;
         if key == "general.alignment" {
-            alignment = cursor.read_numeric_as_usize(value_type)?.max(1);
+            // Layout-critical: reject signed negatives (do not wrap to huge usize).
+            alignment = cursor.read_nonneg_layout_usize(value_type)?.max(1);
         } else {
             capture_kv(cursor, &mut metadata, key, value_type)?;
         }
