@@ -110,8 +110,6 @@ so `rustup` / `cargo` in this directory use latest stable automatically.
 
 There is no `rustfmt.toml` in this repo; defaults are fine.
 
----
-
 ## 2. Gate table
 
 | Step | Command | What it proves |

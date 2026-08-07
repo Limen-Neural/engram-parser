@@ -172,21 +172,29 @@ impl<'a> GgufCursor<'a> {
             .map_err(|e| self.unsupported(format!("invalid UTF-8 in GGUF string: {e}")))
     }
 
+    /// Read an unsigned numeric GGUF value and coerce it to `u64`.
+    fn read_unsigned_as_u64(&mut self, value_type: u32) -> Result<u64> {
+        match value_type {
+            GGUF_VALUE_TYPE_UINT8 | GGUF_VALUE_TYPE_BOOL => self.read_u8_as_u64(),
+            GGUF_VALUE_TYPE_UINT16 => self.read_u16_as_u64(),
+            GGUF_VALUE_TYPE_UINT32 => self.read_u32_as_u64(),
+            GGUF_VALUE_TYPE_UINT64 => self.read_u64(),
+            other => Err(self.unsupported(format!(
+                "expected unsigned numeric GGUF value, got type {other}"
+            ))),
+        }
+    }
+
     /// Read a numeric-typed GGUF value and coerce it to `u64`.
     pub(crate) fn read_numeric_as_u64(&mut self, value_type: u32) -> Result<u64> {
-        match value_type {
-            GGUF_VALUE_TYPE_UINT8 => self.read_u8_as_u64(),
-            GGUF_VALUE_TYPE_INT8 => self.read_signed_as_u64(value_type),
-            GGUF_VALUE_TYPE_UINT16 => self.read_u16_as_u64(),
-            GGUF_VALUE_TYPE_INT16 => self.read_signed_as_u64(value_type),
-            GGUF_VALUE_TYPE_UINT32 => self.read_u32_as_u64(),
-            GGUF_VALUE_TYPE_INT32 => self.read_signed_as_u64(value_type),
-            GGUF_VALUE_TYPE_UINT64 => self.read_u64(),
-            GGUF_VALUE_TYPE_INT64 => self.read_signed_as_u64(value_type),
-            GGUF_VALUE_TYPE_BOOL => self.read_u8_as_u64(),
-            other => {
-                Err(self.unsupported(format!("expected numeric GGUF value, got type {other}")))
-            }
+        if is_signed_layout_type(value_type) {
+            self.read_signed_as_u64(value_type)
+        } else if is_unsigned_layout_type(value_type) {
+            self.read_unsigned_as_u64(value_type)
+        } else {
+            Err(self.unsupported(format!(
+                "expected numeric GGUF value, got type {value_type}"
+            )))
         }
     }
 

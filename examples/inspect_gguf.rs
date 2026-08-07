@@ -27,33 +27,14 @@ enum Resolved {
     Version,
 }
 
-fn main() -> ExitCode {
-    let path = match resolve_path() {
-        Ok(Resolved::Path(p)) => p,
-        Ok(Resolved::Help) => {
-            eprintln!("usage: cargo run --example inspect_gguf -- [--] <model.gguf>");
-            eprintln!("   or: ENGRAM_GGUF=<model.gguf> cargo run --example inspect_gguf");
-            return ExitCode::SUCCESS;
-        }
-        Ok(Resolved::Version) => {
-            eprintln!("engram-parser {}", env!("CARGO_PKG_VERSION"));
-            return ExitCode::SUCCESS;
-        }
-        Err(msg) => {
-            eprintln!("{msg}");
-            eprintln!("usage: cargo run --example inspect_gguf -- [--] <model.gguf>");
-            eprintln!("   or: ENGRAM_GGUF=<model.gguf> cargo run --example inspect_gguf");
-            return ExitCode::from(2);
-        }
-    };
+fn print_usage() {
+    eprintln!("usage: cargo run --example inspect_gguf -- [--] <model.gguf>");
+    eprintln!("   or: ENGRAM_GGUF=<model.gguf> cargo run --example inspect_gguf");
+}
 
-    if !path.is_file() {
-        eprintln!("not a file: {}", path.display());
-        return ExitCode::from(1);
-    }
-
+fn run(path: &Path) -> ExitCode {
     let t0 = Instant::now();
-    let layout = match load_gguf(&path) {
+    let layout = match load_gguf(path) {
         Ok(l) => l,
         Err(e) => {
             eprintln!("load_gguf failed: {e}");
@@ -63,12 +44,37 @@ fn main() -> ExitCode {
     // Includes full-file read + parse (not parse-only).
     let load_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
-    print_inventory(&layout, &path, load_ms);
+    print_inventory(&layout, path, load_ms);
     print_dtype_histogram(&layout);
     print_moe_summary(&layout);
     print_tensor_sample(&layout);
 
     ExitCode::SUCCESS
+}
+
+fn main() -> ExitCode {
+    match resolve_path() {
+        Ok(Resolved::Path(p)) => {
+            if !p.is_file() {
+                eprintln!("not a file: {}", p.display());
+                return ExitCode::from(1);
+            }
+            run(&p)
+        }
+        Ok(Resolved::Help) => {
+            print_usage();
+            ExitCode::SUCCESS
+        }
+        Ok(Resolved::Version) => {
+            eprintln!("engram-parser {}", env!("CARGO_PKG_VERSION"));
+            ExitCode::SUCCESS
+        }
+        Err(msg) => {
+            eprintln!("{msg}");
+            print_usage();
+            ExitCode::from(2)
+        }
+    }
 }
 
 fn print_inventory(layout: &GgufLayout, path: &Path, load_ms: f64) {
