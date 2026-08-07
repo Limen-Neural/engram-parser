@@ -15,9 +15,11 @@
 #
 # See .github/workflows/docker-build.yml and issue #9 for CI (GHCR on main).
 
-ARG RUST_VERSION=1.87
+ARG RUST_VERSION=1.97.1
 
 FROM rust:${RUST_VERSION}-slim
+
+ARG RUST_VERSION
 
 RUN useradd -m -u 10001 appuser
 
@@ -29,8 +31,11 @@ COPY Cargo.toml Cargo.lock ./
 # Copy source
 COPY . .
 
-# Build and test the crate (zero external deps, no system packages needed)
-RUN cargo build --release --all-features && \
+# Build and test the crate with the pinned toolchain.
+# RUSTUP_TOOLCHAIN is scoped to this RUN so it does not leak into the final image.
+RUN export RUSTUP_TOOLCHAIN=${RUST_VERSION} && \
+    rustc --version && cargo --version && \
+    cargo build --release --all-features && \
     cargo test --release --all-features
 
 RUN chown -R appuser:appuser /app

@@ -24,19 +24,62 @@ pub(crate) fn invalid_layout(path: &str, reason: impl Into<String>) -> ParserErr
     }
 }
 
-pub(crate) const VT_U8: u32 = 0;
-pub(crate) const VT_I8: u32 = 1;
-pub(crate) const VT_U16: u32 = 2;
-pub(crate) const VT_I16: u32 = 3;
-pub(crate) const VT_U32: u32 = 4;
-pub(crate) const VT_I32: u32 = 5;
-pub(crate) const VT_F32: u32 = 6;
-pub(crate) const VT_BOOL: u32 = 7;
-pub(crate) const VT_STRING: u32 = 8;
-pub(crate) const VT_ARRAY: u32 = 9;
-pub(crate) const VT_U64: u32 = 10;
-pub(crate) const VT_I64: u32 = 11;
-pub(crate) const VT_F64: u32 = 12;
+/// GGUF value type: 8-bit unsigned integer.
+pub const GGUF_VALUE_TYPE_UINT8: u32 = 0;
+/// GGUF value type: 8-bit signed integer.
+pub const GGUF_VALUE_TYPE_INT8: u32 = 1;
+/// GGUF value type: 16-bit unsigned integer.
+pub const GGUF_VALUE_TYPE_UINT16: u32 = 2;
+/// GGUF value type: 16-bit signed integer.
+pub const GGUF_VALUE_TYPE_INT16: u32 = 3;
+/// GGUF value type: 32-bit unsigned integer.
+pub const GGUF_VALUE_TYPE_UINT32: u32 = 4;
+/// GGUF value type: 32-bit signed integer.
+pub const GGUF_VALUE_TYPE_INT32: u32 = 5;
+/// GGUF value type: 32-bit IEEE 754 float.
+pub const GGUF_VALUE_TYPE_FLOAT32: u32 = 6;
+/// GGUF value type: boolean (1 byte, 0 or 1).
+pub const GGUF_VALUE_TYPE_BOOL: u32 = 7;
+/// GGUF value type: length-prefixed UTF-8 string.
+pub const GGUF_VALUE_TYPE_STRING: u32 = 8;
+/// GGUF value type: length-prefixed array of nested values.
+pub const GGUF_VALUE_TYPE_ARRAY: u32 = 9;
+/// GGUF value type: 64-bit unsigned integer.
+pub const GGUF_VALUE_TYPE_UINT64: u32 = 10;
+/// GGUF value type: 64-bit signed integer.
+pub const GGUF_VALUE_TYPE_INT64: u32 = 11;
+/// GGUF value type: 64-bit IEEE 754 float.
+pub const GGUF_VALUE_TYPE_FLOAT64: u32 = 12;
+
+pub(crate) fn is_signed_layout_type(value_type: u32) -> bool {
+    matches!(
+        value_type,
+        GGUF_VALUE_TYPE_INT8
+            | GGUF_VALUE_TYPE_INT16
+            | GGUF_VALUE_TYPE_INT32
+            | GGUF_VALUE_TYPE_INT64
+    )
+}
+
+fn is_unsigned_layout_type(value_type: u32) -> bool {
+    matches!(
+        value_type,
+        GGUF_VALUE_TYPE_UINT8
+            | GGUF_VALUE_TYPE_UINT16
+            | GGUF_VALUE_TYPE_UINT32
+            | GGUF_VALUE_TYPE_UINT64
+            | GGUF_VALUE_TYPE_BOOL
+    )
+}
+
+fn nonneg_signed(path: &str, v: i64) -> Result<u64> {
+    u64::try_from(v).map_err(|_| {
+        invalid_layout(
+            path,
+            format!("signed layout value {v} is negative; expected non-negative"),
+        )
+    })
+}
 
 pub(crate) struct GgufCursor<'a> {
     bytes: &'a [u8],
@@ -129,21 +172,29 @@ impl<'a> GgufCursor<'a> {
             .map_err(|e| self.unsupported(format!("invalid UTF-8 in GGUF string: {e}")))
     }
 
+    /// Read an unsigned numeric GGUF value and coerce it to `u64`.
+    fn read_unsigned_as_u64(&mut self, value_type: u32) -> Result<u64> {
+        match value_type {
+            GGUF_VALUE_TYPE_UINT8 | GGUF_VALUE_TYPE_BOOL => self.read_u8_as_u64(),
+            GGUF_VALUE_TYPE_UINT16 => self.read_u16_as_u64(),
+            GGUF_VALUE_TYPE_UINT32 => self.read_u32_as_u64(),
+            GGUF_VALUE_TYPE_UINT64 => self.read_u64(),
+            other => Err(self.unsupported(format!(
+                "expected unsigned numeric GGUF value, got type {other}"
+            ))),
+        }
+    }
+
     /// Read a numeric-typed GGUF value and coerce it to `u64`.
     pub(crate) fn read_numeric_as_u64(&mut self, value_type: u32) -> Result<u64> {
-        match value_type {
-            VT_U8 => self.read_u8_as_u64(),
-            VT_I8 => self.read_i8_as_u64(),
-            VT_U16 => self.read_u16_as_u64(),
-            VT_I16 => self.read_i16_as_u64(),
-            VT_U32 => self.read_u32_as_u64(),
-            VT_I32 => self.read_i32_as_u64(),
-            VT_U64 => self.read_u64(),
-            VT_I64 => self.read_i64_as_u64(),
-            VT_BOOL => self.read_u8_as_u64(),
-            other => {
-                Err(self.unsupported(format!("expected numeric GGUF value, got type {other}")))
-            }
+        if is_signed_layout_type(value_type) {
+            self.read_signed_as_u64(value_type)
+        } else if is_unsigned_layout_type(value_type) {
+            self.read_unsigned_as_u64(value_type)
+        } else {
+            Err(self.unsupported(format!(
+                "expected numeric GGUF value, got type {value_type}"
+            )))
         }
     }
 
@@ -151,68 +202,95 @@ impl<'a> GgufCursor<'a> {
         Ok(self.read_u8()? as u64)
     }
 
-    fn read_i8_as_u64(&mut self) -> Result<u64> {
-        Ok(self.read_u8()? as i8 as i64 as u64)
-    }
-
     fn read_u16_as_u64(&mut self) -> Result<u64> {
         Ok(self.read_u16()? as u64)
-    }
-
-    fn read_i16_as_u64(&mut self) -> Result<u64> {
-        Ok(self.read_i16()? as i64 as u64)
     }
 
     fn read_u32_as_u64(&mut self) -> Result<u64> {
         Ok(self.read_u32()? as u64)
     }
 
-    fn read_i32_as_u64(&mut self) -> Result<u64> {
-        Ok(self.read_i32()? as i64 as u64)
+    /// Read a signed GGUF value and return its bit-preserving `u64`
+    /// representation. Negative values are not rejected here so that vendor
+    /// metadata can store signed quantities without loss.
+    fn read_signed_as_u64(&mut self, value_type: u32) -> Result<u64> {
+        Ok(self.read_signed_as_i64(value_type)? as u64)
     }
 
-    fn read_i64_as_u64(&mut self) -> Result<u64> {
-        Ok(self.read_i64()? as u64)
+    fn read_signed_as_i64(&mut self, value_type: u32) -> Result<i64> {
+        match value_type {
+            GGUF_VALUE_TYPE_INT8 => Ok(self.read_u8()? as i8 as i64),
+            GGUF_VALUE_TYPE_INT16 => Ok(self.read_i16()? as i64),
+            GGUF_VALUE_TYPE_INT32 => Ok(self.read_i32()? as i64),
+            GGUF_VALUE_TYPE_INT64 => Ok(self.read_i64()?),
+            other => unreachable!("caller filters signed types, got {other}"),
+        }
     }
 
-    /// Read a numeric-typed GGUF value and coerce it to `usize`.
-    pub(crate) fn read_numeric_as_usize(&mut self, value_type: u32) -> Result<usize> {
-        Ok(self.read_numeric_as_u64(value_type)? as usize)
+    /// Read a non-negative layout value (e.g. `general.alignment`).
+    ///
+    /// Rejects signed negatives so they do not wrap into huge alignments.
+    /// Other signed KV pairs should use [`Self::read_numeric_as_u64`] instead.
+    pub(crate) fn read_nonneg_layout_usize(&mut self, value_type: u32) -> Result<usize> {
+        let v = if is_signed_layout_type(value_type) {
+            let s = self.read_signed_as_i64(value_type)?;
+            nonneg_signed(self.path, s)?
+        } else if is_unsigned_layout_type(value_type) {
+            self.read_numeric_as_u64(value_type)?
+        } else {
+            return Err(self.unsupported(format!(
+                "expected integer GGUF value for layout field, got type {value_type}"
+            )));
+        };
+        Ok(v as usize)
     }
 
     /// Render a scalar GGUF value as a string (used for metadata KV).
     #[allow(dead_code)]
     pub(crate) fn read_scalar_as_string(&mut self, value_type: u32) -> Result<String> {
         match value_type {
-            VT_U8 | VT_I8 | VT_U16 | VT_I16 | VT_U32 | VT_I32 | VT_U64 | VT_I64 | VT_BOOL => {
-                Ok(self.read_numeric_as_u64(value_type)?.to_string())
-            }
-            VT_F32 => Ok(self.read_f32()?.to_string()),
-            VT_F64 => Ok(self.read_f64()?.to_string()),
-            VT_STRING => self.read_string(),
+            GGUF_VALUE_TYPE_UINT8
+            | GGUF_VALUE_TYPE_INT8
+            | GGUF_VALUE_TYPE_UINT16
+            | GGUF_VALUE_TYPE_INT16
+            | GGUF_VALUE_TYPE_UINT32
+            | GGUF_VALUE_TYPE_INT32
+            | GGUF_VALUE_TYPE_UINT64
+            | GGUF_VALUE_TYPE_INT64
+            | GGUF_VALUE_TYPE_BOOL => Ok(self.read_numeric_as_u64(value_type)?.to_string()),
+            GGUF_VALUE_TYPE_FLOAT32 => Ok(self.read_f32()?.to_string()),
+            GGUF_VALUE_TYPE_FLOAT64 => Ok(self.read_f64()?.to_string()),
+            GGUF_VALUE_TYPE_STRING => self.read_string(),
             other => Err(self.unsupported(format!("unexpected scalar GGUF value type {other}"))),
         }
     }
 
     /// Skip an arbitrary GGUF value without materialising it.
     pub(crate) fn skip_value(&mut self, value_type: u32) -> Result<()> {
+        if value_type == GGUF_VALUE_TYPE_ARRAY {
+            self.skip_array_value()
+        } else {
+            self.skip_scalar_value(value_type)
+        }
+    }
+
+    fn skip_scalar_value(&mut self, value_type: u32) -> Result<()> {
         match value_type {
-            VT_U8 | VT_I8 | VT_BOOL => {
+            GGUF_VALUE_TYPE_UINT8 | GGUF_VALUE_TYPE_INT8 | GGUF_VALUE_TYPE_BOOL => {
                 self.read_exact(1)?;
             }
-            VT_U16 | VT_I16 => {
+            GGUF_VALUE_TYPE_UINT16 | GGUF_VALUE_TYPE_INT16 => {
                 self.read_exact(2)?;
             }
-            VT_U32 | VT_I32 | VT_F32 => {
+            GGUF_VALUE_TYPE_UINT32 | GGUF_VALUE_TYPE_INT32 | GGUF_VALUE_TYPE_FLOAT32 => {
                 self.read_exact(4)?;
             }
-            VT_U64 | VT_I64 | VT_F64 => {
+            GGUF_VALUE_TYPE_UINT64 | GGUF_VALUE_TYPE_INT64 | GGUF_VALUE_TYPE_FLOAT64 => {
                 self.read_exact(8)?;
             }
-            VT_STRING => {
+            GGUF_VALUE_TYPE_STRING => {
                 let _ = self.read_string()?;
             }
-            VT_ARRAY => self.skip_array_value()?,
             other => {
                 return Err(self.unsupported(format!("unsupported GGUF value type {other}")));
             }
@@ -220,12 +298,89 @@ impl<'a> GgufCursor<'a> {
         Ok(())
     }
 
+    /// Skip a GGUF array value using an explicit stack instead of recursion,
+    /// so deep-but-valid metadata arrays are not rejected by an arbitrary
+    /// depth limit. Total work is still bounded by the remaining byte range.
     fn skip_array_value(&mut self) -> Result<()> {
         let nested = self.read_u32()?;
-        let len = self.read_u64()? as usize;
-        for _ in 0..len {
-            self.skip_value(nested)?;
+        let len = self.read_u64()?;
+
+        // Reject lengths that cannot possibly fit in the remaining buffer.
+        let remaining = self.bytes.len().saturating_sub(self.offset) as u64;
+        if len > remaining {
+            return Err(
+                self.unsupported("GGUF array length exceeds remaining metadata bytes".into())
+            );
+        }
+
+        // Stack of (element_type, elements_remaining) pairs. Depth is bounded
+        // only by nesting of arrays, not by a hard-coded recursion limit.
+        let mut stack: Vec<(u32, u64)> = Vec::new();
+        stack.push((nested, len));
+
+        while let Some((ty, mut count)) = stack.pop() {
+            if ty == GGUF_VALUE_TYPE_ARRAY {
+                if count == 0 {
+                    continue;
+                }
+                // Each element is an independent sub-array; read one header.
+                let sub_ty = self.read_u32()?;
+                let sub_len = self.read_u64()?;
+                let bytes_left = self.bytes.len().saturating_sub(self.offset) as u64;
+                if sub_len > bytes_left {
+                    return Err(self.unsupported(
+                        "GGUF nested array length exceeds remaining metadata bytes".into(),
+                    ));
+                }
+                count -= 1;
+                if count > 0 {
+                    stack.push((ty, count));
+                }
+                stack.push((sub_ty, sub_len));
+            } else {
+                for _ in 0..count {
+                    self.skip_scalar_value(ty)?;
+                }
+            }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn push_u32(out: &mut Vec<u8>, v: u32) {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+
+    fn push_u64(out: &mut Vec<u8>, v: u64) {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+
+    #[test]
+    fn skip_array_value_handles_deep_nesting() {
+        // Build a 32-level nested array of arrays ending in an empty UINT8 array.
+        const DEPTH: usize = 32;
+        let mut bytes = Vec::with_capacity(DEPTH * 12);
+        for level in 0..DEPTH {
+            if level == DEPTH - 1 {
+                push_u32(&mut bytes, GGUF_VALUE_TYPE_UINT8);
+            } else {
+                push_u32(&mut bytes, GGUF_VALUE_TYPE_ARRAY);
+            }
+            push_u64(&mut bytes, if level == DEPTH - 1 { 0 } else { 1 });
+        }
+
+        let mut cursor = GgufCursor::new(&bytes, "mem://deep-array");
+        cursor
+            .skip_value(GGUF_VALUE_TYPE_ARRAY)
+            .expect("skip deep array");
+        assert_eq!(
+            cursor.offset,
+            bytes.len(),
+            "did not consume entire nested array"
+        );
     }
 }

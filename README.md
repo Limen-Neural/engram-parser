@@ -61,6 +61,28 @@ for the full Rust runtime/deployment boundary matrix and
 [issue #4](https://github.com/Limen-Neural/engram-parser/issues/4) for
 this repo's tracking issue.
 
+
+## Origin / modularization (#7)
+
+GGUF layout parsing and MoE expert **raw byte** extraction were expanded
+using one-way inspiration from the experimental
+[`rmems/corinth-canal`](https://github.com/rmems/corinth-canal) reference
+implementation (**no** runtime dependency on corinth-canal).
+
+- Tracking: [engram-parser#7](https://github.com/Limen-Neural/engram-parser/issues/7)
+- Corinth migration companion: [corinth-canal#115](https://github.com/rmems/corinth-canal/issues/115)
+- Cortex coordination: [cortex-tensor#8](https://github.com/Limen-Neural/cortex-tensor/issues/8)
+- Linear: [LIM-123](https://linear.app/rpd-34/issue/LIM-123), [LIM-88](https://linear.app/rpd-34/issue/LIM-88)
+
+**GGUF wire types vs “GGML”:** GGUF stores each tensor’s dtype as a
+`ggml_type` integer. This crate only maps those codes to labels and packed
+**byte sizes** so payloads and MoE slices stay in-range. It does **not**
+implement GGML dequant, kernels, or the ggml runtime (that stays
+downstream / corinth-canal reference). Wire-type labels follow the
+corinth-canal table (e.g. type **31** is historical `Q4_0_4_4`, not the
+HuggingFace “IQ3_M” preset). MoE extraction remains free functions
+(`list_experts` / `extract_expert`); traits are out of scope for #7.
+
 ## Quick start
 
 ```rust
@@ -81,16 +103,28 @@ for (block, expert) in list_experts(&layout) {
 
 ## Supported dtypes
 
-Layout-aware parsing: `F32`, `F16`, `BF16` (GGML 30), `Q8_0`, `Q4_K`,
-`Q5_K`, `Q6_K`, `IQ3_S` (opaque), plus a `DType::Other(u32)` catch-all.
+Layout-aware parsing (**packed byte sizes only — no dequant, no GGML
+compute**) for GGUF wire types: `F32`, `F16`, `BF16` (30), `F64`,
+`I8`–`I64`, `Q4_0`/`Q4_1`, `Q5_0`/`Q5_1`, `Q8_0`/`Q8_1`, K-quants
+`Q2_K`/`Q3_K`/`Q4_K`/`Q5_K`/`Q6_K`/`Q8_K` (no `Q7_K`), and IQ packed
+layouts `IQ2_XXS`/`IQ2_XS`/`IQ2_S`, `IQ3_XXS`/`IQ3_S`, `IQ1_S`/`IQ1_M`,
+`IQ4_NL`/`IQ4_XS`. Remaining codes use `DType::Other(u32)` (including
+historical **wire type 31 = `Q4_0_4_4`**, which is **not** HF “IQ3_M”
+and fails closed without a modeled size).
+
 Only `F32` and `F16` have in-crate numeric accessors; everything else
-is returned as raw `Vec<u8>`.
+is returned as raw `Vec<u8>`. Unknown layouts fail closed at parse time
+when element count cannot be converted to a byte length.
+
+`GgufMetadata::quantization()` prefers `general.quantization_type`, then
+falls back to `general.file_type` (`0→F32`, `1→F16`, else `GGUF(n)`).
 
 ## Public API
 
 `load_gguf`, `parse_bytes`, `GgufLayout`, `GgufMetadata`, `Tensor`,
-`DType`, `extract_expert`, `list_experts`, `MoeExpertWeights`,
-`RawTensor`, `ParserError`, `Result`.
+`DType`, `ggml_type_label`, `extract_expert`, `list_experts`,
+`MoeExpertWeights`, `RawTensor`, `ParserError`, `Result`, plus public
+`GGML_TYPE_*` and `GGUF_VALUE_TYPE_*` constants.
 
 ## Ecosystem / Sibling parsers (LIM-9)
 
@@ -122,7 +156,17 @@ cargo test --all-features
 
 # Coverage (local; requires cargo-llvm-cov: cargo install cargo-llvm-cov)
 cargo llvm-cov --all-targets --all-features --locked --lcov --output-path lcov.info
+
+# Real GGUF pilots (xai-dissect style; not CI — needs weights on disk)
+# Full-file load (no mmap): one ENGRAM_GGUF per process; free RAM ≥ file size + margin
+ENGRAM_GGUF=~/.models/gguf/.../model.gguf cargo test --test real_gguf -- --ignored --nocapture
+# Large MoE: ENGRAM_EXPECT_MOE=1 ENGRAM_MOE_SAMPLES=3 (see REVIEW.md T1 large MoE)
+cargo run --example inspect_gguf -- ~/.models/gguf/.../model.gguf
 ```
+
+GPU experiments on real models live in **`~/rmems/blackwell-kernel-lab`**
+(and production kernels in `myelin-accelerator`) — not as deps of this crate.
+See [REVIEW.md](REVIEW.md) for the T0/T1/T2 quality-gate layout.
 
 ## Docker
 
@@ -151,13 +195,16 @@ Cross-reference: #11, #8, #9, #7, #5, LIM-9.
 
 ## MSRV (Minimum Supported Rust Version)
 
-**MSRV: 1.87**
+**MSRV: 1.97.1** (current stable floor as of 2026-08)
 
-This crate guarantees compatibility with Rust 1.87 and later. The MSRV is:
+This crate guarantees compatibility with Rust 1.97.1 and later. The MSRV is:
 
-- Declared in `Cargo.toml` via `rust-version = "1.87"`
+- Declared in `Cargo.toml` via `rust-version = "1.97.1"`
 - Tested in CI on every PR and push (see `msrv` job in `.github/workflows/ci.yml`)
-- Verified alongside stable Rust to ensure both toolchains pass all checks
+- Verified alongside **stable** (always latest) in the `validate` job so both toolchains pass
+
+Local development defaults to the toolchain in [`rust-toolchain.toml`](rust-toolchain.toml)
+(`stable` + `rustfmt` / `clippy`).
 
 **MSRV Policy:**
 - MSRV bumps will be documented in release notes

@@ -1,6 +1,10 @@
 # Build artifacts
 target/
 
+# Toolchain is explicitly pinned in the build RUN; do not override
+# the image's default toolchain at runtime.
+rust-toolchain.toml
+
 # Git metadata
 **/.git
 
