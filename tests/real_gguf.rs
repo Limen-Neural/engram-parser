@@ -123,6 +123,27 @@ fn extract_and_report(layout: &GgufLayout, path: &Path, b: usize, e: usize) {
     );
 }
 
+/// Load one pilot and extract up to `samples` MoE expert pairs.
+/// Returns `true` if the file contained at least one discoverable MoE pair.
+fn scan_one_pilot(path: &Path, samples: usize) -> bool {
+    let (layout, experts) = load_and_scan(path);
+
+    if experts.is_empty() {
+        eprintln!("skip MoE (none discovered): {}", path.display());
+        return false;
+    }
+
+    let take = samples.min(experts.len());
+    for &(b, e) in experts.iter().take(take) {
+        extract_and_report(&layout, path, b, e);
+    }
+
+    if let Some(n) = layout.metadata.expert_count() {
+        assert!(n > 0, "{}: expert_count metadata is 0", path.display());
+    }
+    true
+}
+
 fn pilot_gguf_paths_from(
     single: Option<&str>,
     model_dir: Option<&str>,
@@ -141,12 +162,13 @@ fn pilot_gguf_paths_from(
         return Vec::new();
     }
 
-    let max = max.and_then(|s| s.parse::<usize>().ok()).unwrap_or(8);
+    let max = max.and_then(|s| s.parse::<usize>().ok()).unwrap_or(1);
 
-    // Collect the full candidate set first, then sort and cap — `read_dir`
-    // order is unspecified, so capping during walk is non-reproducible.
+    // Scan the directory tree for `*.gguf` files, limited by depth and the
+    // requested cap. Entries are sorted at each directory so the result is
+    // deterministic even though `fs::read_dir` order is unspecified.
     let mut out = Vec::new();
-    collect_gguf(&root, 0, 6, &mut out);
+    collect_gguf(&root, 0, 6, max, &mut out);
     out.sort();
     out.truncate(max);
     out
@@ -160,31 +182,45 @@ fn pilot_gguf_paths() -> Vec<PathBuf> {
     )
 }
 
-fn collect_gguf(dir: &Path, depth: usize, max_depth: usize, out: &mut Vec<PathBuf>) {
-    if depth > max_depth {
-        return;
-    }
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
+fn partition_entries(dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let mut files = Vec::new();
     let mut dirs = Vec::new();
+    let Ok(entries) = fs::read_dir(dir) else {
+        return (files, dirs);
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_file() {
-            if path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|e| e.eq_ignore_ascii_case("gguf"))
-            {
-                out.push(path);
-            }
-        } else if path.is_dir() {
+        if path.is_dir() {
             dirs.push(path);
+        } else if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("gguf"))
+        {
+            files.push(path);
         }
     }
+    files.sort();
     dirs.sort();
+    (files, dirs)
+}
+
+fn collect_gguf(dir: &Path, depth: usize, max_depth: usize, max: usize, out: &mut Vec<PathBuf>) {
+    if depth > max_depth || out.len() >= max {
+        return;
+    }
+    let (files, dirs) = partition_entries(dir);
+    for f in files {
+        if out.len() >= max {
+            break;
+        }
+        out.push(f);
+    }
     for d in dirs {
-        collect_gguf(&d, depth + 1, max_depth, out);
+        if out.len() >= max {
+            break;
+        }
+        collect_gguf(&d, depth + 1, max_depth, max, out);
     }
 }
 
@@ -259,21 +295,8 @@ fn real_gguf_moe_extract_when_present() {
     let mut any_moe = false;
 
     for path in paths {
-        let (layout, experts) = load_and_scan(&path);
-
-        if experts.is_empty() {
-            eprintln!("skip MoE (none discovered): {}", path.display());
-            continue;
-        }
-        any_moe = true;
-
-        let take = samples.min(experts.len());
-        for &(b, e) in experts.iter().take(take) {
-            extract_and_report(&layout, &path, b, e);
-        }
-
-        if let Some(n) = layout.metadata.expert_count() {
-            assert!(n > 0, "{}: expert_count metadata is 0", path.display());
+        if scan_one_pilot(&path, samples) {
+            any_moe = true;
         }
     }
 
