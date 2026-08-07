@@ -19,6 +19,11 @@ ARG RUST_VERSION=1.97.1
 
 FROM rust:${RUST_VERSION}-slim
 
+ARG RUST_VERSION
+ENV RUSTUP_TOOLCHAIN=${RUST_VERSION}
+
+RUN rustc --version && cargo --version
+
 RUN useradd -m -u 10001 appuser
 
 WORKDIR /app
@@ -30,7 +35,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY . .
 
 # Build and test the crate (zero external deps, no system packages needed)
-RUN cargo build --release --all-features && \
+RUN rustc --version && cargo --version && \
+    cargo build --release --all-features && \
     cargo test --release --all-features
 
 RUN chown -R appuser:appuser /app

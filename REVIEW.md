@@ -133,7 +133,7 @@ There is no `rustfmt.toml` in this repo; defaults are fine.
 ```bash
 # WRONG — cargo parses "-llvm-cov" as options → unexpected argument '-l'
 #   cargo -llvm-cov
-#   /home/raulmc/.cargo/bin/cargo -llvm-cov
+#   $HOME/.cargo/bin/cargo -llvm-cov
 
 # once per machine (installs ~/.cargo/bin/cargo-llvm-cov)
 cargo install cargo-llvm-cov --locked
@@ -213,6 +213,7 @@ the CI `msrv` job.
 | `+1.97.1` ignored / still wrong version | Prefer `cargo +1.97.1 -V` to verify; or `RUSTUP_TOOLCHAIN=1.97.1` |
 | `clippy-driver` / rustfmt missing on 1.97.1 | `rustup component add clippy rustfmt --toolchain 1.97.1` |
 | IDE “Cargo” has no `+1.97.1` | Set env `RUSTUP_TOOLCHAIN=1.97.1` in the run config, or use the terminal |
+
 ---
 
 ## 3. What `cargo test` covers (this branch)
@@ -349,6 +350,7 @@ cargo run --locked --example benchmark --profile bench --features bench,cuda
 | Safetensors | engram-parser #10 (separate) |
 | Routing / MoE matmul / generation | cortex-tensor / hybrid stack |
 | Optional myelin dep on this crate | **Never** — keeps zero-dep charter |
+
 ---
 
 ## 6. CI mapping

@@ -111,7 +111,7 @@ jobs:
 
       - name: Confirm MSRV toolchain is active
         run: |
-          rustc --version | grep -F '1.97.1'
+          rustc --version | grep -F '1.97.1 '
           cargo --version
 
       - name: Check formatting
