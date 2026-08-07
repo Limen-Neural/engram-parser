@@ -252,7 +252,7 @@ cd ~/Limen-Neural/engram-parser
 ENGRAM_GGUF=~/.models/gguf/Abiray/ZAYA1-8B-GGUF/ZAYA1-8B-Q8_0.gguf \
   cargo test --test real_gguf -- --ignored --nocapture
 
-# Scan a tree (depth-limited; cap with ENGRAM_GGUF_MAX, default 8)
+# Scan a tree (depth-limited; cap with ENGRAM_GGUF_MAX, default 1)
 ENGRAM_MODEL_DIR=~/.models/gguf ENGRAM_GGUF_MAX=3 \
   cargo test --test real_gguf -- --ignored --nocapture
 
@@ -267,7 +267,7 @@ Env vars:
 |-----|---------|
 | `ENGRAM_GGUF` | One `.gguf` path (wins over dir scan) |
 | `ENGRAM_MODEL_DIR` | Root to walk for `*.gguf` |
-| `ENGRAM_GGUF_MAX` | Max files when scanning (default 8) |
+| `ENGRAM_GGUF_MAX` | Max files when scanning (default 1) |
 | `ENGRAM_EXPECT_MOE` | `1`/`true` → fail if no expert pairs discovered |
 | `ENGRAM_MOE_SAMPLES` | Number of `(block,expert)` pairs to extract (default 1) |
 
