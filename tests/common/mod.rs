@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+#![allow(dead_code)]
+
 //! Shared test fixtures for synthetic GGUF bytes.
 
 pub const GGUF_MAGIC: [u8; 4] = *b"GGUF";
@@ -16,7 +18,6 @@ pub const GGML_Q8_0: u32 = 8;
 pub const GGML_Q4_K: u32 = 12;
 pub const GGML_IQ3_S: u32 = 21;
 
-#[allow(dead_code)]
 pub enum KvValue {
     U32(u32),
     Str(&'static str),

@@ -15,7 +15,6 @@
 
 use std::collections::HashMap;
 use std::env;
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
@@ -156,15 +155,9 @@ fn resolve_path() -> Result<PathBuf, String> {
     // nosemgrep: argv is used only for CLI dispatch, never as a security trust anchor.
     let mut args = env::args_os().skip(1);
     if let Some(p) = args.next() {
-        return os_to_path(p);
+        return Ok(PathBuf::from(p));
     }
     env::var("ENGRAM_GGUF")
         .map(PathBuf::from)
         .map_err(|_| "missing model path (arg or ENGRAM_GGUF)".into())
-}
-
-fn os_to_path(p: OsString) -> Result<PathBuf, String> {
-    p.into_string()
-        .map(PathBuf::from)
-        .map_err(|_| "model path is not valid UTF-8".into())
 }

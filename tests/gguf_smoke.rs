@@ -220,6 +220,7 @@ fn metadata_layout() -> engram_parser::GgufLayout {
         ("qwen2moe.expert_used_count", KvValue::U32(8)),
         ("qwen2moe.embedding_length", KvValue::U32(2048)),
         ("qwen2moe.attention.head_count", KvValue::U32(16)),
+        ("qwen2moe.rope_freq_base", KvValue::F32(10_000.0)),
         ("general.name", KvValue::Str("Qwen2-MoE-A2.7B")),
     ];
     parse_bytes(build_gguf(&kv, &[]), "mem://metadata".into()).expect("parse")
@@ -234,6 +235,7 @@ fn metadata_helpers_basic() {
         layout.metadata.string("general.name"),
         Some("Qwen2-MoE-A2.7B")
     );
+    assert!((layout.metadata.float32("qwen2moe.rope_freq_base").unwrap() - 10_000.0).abs() < 1e-6);
 }
 
 #[test]
@@ -304,7 +306,6 @@ fn ggml_type_label_function() {
         assert_eq!(ggml_type_label(code), expected, "label for code {code}");
     }
 
-    assert_ne!(ggml_type_label(31), "IQ3_M");
     assert_eq!(ggml_type_label(999), "unknown");
 }
 

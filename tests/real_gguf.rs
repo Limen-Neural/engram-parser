@@ -53,7 +53,7 @@ fn moe_sample_count() -> usize {
         .max(1)
 }
 
-use engram_parser::{DType, GgufLayout, MoeExpertWeights, extract_expert, list_experts, load_gguf};
+use engram_parser::{GgufLayout, MoeExpertWeights, extract_expert, list_experts, load_gguf};
 
 /// Assert that an extracted expert has at least one role tensor and that each
 /// role tensor has a consistent payload size for its declared dtype.
@@ -69,18 +69,21 @@ fn assert_expert_weights_valid(path: &Path, b: usize, e: usize, w: &MoeExpertWei
         assert!(!t.bytes.is_empty(), "{role} empty bytes");
         assert!(!t.dims.is_empty(), "{role} empty dims");
 
-        let expected_bytes = match t.dtype {
-            DType::F16 | DType::BF16 => t.dims.iter().product::<usize>() * 2,
-            DType::F32 => t.dims.iter().product::<usize>() * 4,
-            _ => continue,
-        };
-        assert_eq!(t.bytes.len(), expected_bytes, "{role} byte length");
+        let n_elements = t.dims.iter().product::<usize>();
+        if let Some(expected) = t.dtype.byte_len_for_elements(n_elements) {
+            assert_eq!(
+                t.bytes.len(),
+                expected,
+                "{role} byte length for {} ({b},{e})",
+                path.display()
+            );
+        }
     }
 }
 
 /// Resolve pilot paths the way xai-dissect resolves checkpoint pilots:
-/// explicit file, else scan a directory for `*.gguf` (non-recursive by default
-/// depth-limited walk so huge trees stay controllable).
+/// explicit file, else scan a directory for `*.gguf` recursively, limited by
+/// the configured depth so huge trees stay controllable.
 fn load_and_scan(path: &Path) -> (GgufLayout, Vec<(usize, usize)>) {
     let t0 = Instant::now();
     let layout = load_gguf(path).expect("load");
