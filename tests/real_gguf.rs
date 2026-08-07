@@ -24,9 +24,10 @@
 
 use std::env;
 use std::fs;
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::process;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const ENV_GGUF: &str = "ENGRAM_GGUF";
 const ENV_MODEL_DIR: &str = "ENGRAM_MODEL_DIR";
@@ -39,19 +40,23 @@ const ENV_EXPECT_MOE: &str = "ENGRAM_EXPECT_MOE";
 /// How many (block, expert) pairs to extract when MoE is present (default 1).
 const ENV_MOE_SAMPLES: &str = "ENGRAM_MOE_SAMPLES";
 
-fn expect_moe() -> bool {
-    match env::var(ENV_EXPECT_MOE) {
-        Ok(v) => matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"),
-        Err(_) => false,
+fn expect_moe_from(raw: Option<&str>) -> bool {
+    match raw {
+        Some(v) => matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"),
+        None => false,
     }
 }
 
+fn expect_moe() -> bool {
+    expect_moe_from(env::var(ENV_EXPECT_MOE).ok().as_deref())
+}
+
+fn moe_sample_count_from(raw: Option<&str>) -> usize {
+    raw.and_then(|s| s.parse().ok()).unwrap_or(1).max(1)
+}
+
 fn moe_sample_count() -> usize {
-    env::var(ENV_MOE_SAMPLES)
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1)
-        .max(1)
+    moe_sample_count_from(env::var(ENV_MOE_SAMPLES).ok().as_deref())
 }
 
 use engram_parser::{GgufLayout, MoeExpertWeights, extract_expert, list_experts, load_gguf};
@@ -118,13 +123,17 @@ fn extract_and_report(layout: &GgufLayout, path: &Path, b: usize, e: usize) {
     );
 }
 
-fn pilot_gguf_paths() -> Vec<PathBuf> {
-    if let Ok(single) = env::var(ENV_GGUF) {
+fn pilot_gguf_paths_from(
+    single: Option<&str>,
+    model_dir: Option<&str>,
+    max: Option<&str>,
+) -> Vec<PathBuf> {
+    if let Some(single) = single {
         let p = PathBuf::from(single);
         return if p.is_file() { vec![p] } else { Vec::new() };
     }
 
-    let Ok(root) = env::var(ENV_MODEL_DIR) else {
+    let Some(root) = model_dir else {
         return Vec::new();
     };
     let root = PathBuf::from(root);
@@ -132,10 +141,7 @@ fn pilot_gguf_paths() -> Vec<PathBuf> {
         return Vec::new();
     }
 
-    let max = env::var(ENV_MAX)
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(8);
+    let max = max.and_then(|s| s.parse::<usize>().ok()).unwrap_or(8);
 
     // Collect the full candidate set first, then sort and cap — `read_dir`
     // order is unspecified, so capping during walk is non-reproducible.
@@ -144,6 +150,14 @@ fn pilot_gguf_paths() -> Vec<PathBuf> {
     out.sort();
     out.truncate(max);
     out
+}
+
+fn pilot_gguf_paths() -> Vec<PathBuf> {
+    pilot_gguf_paths_from(
+        env::var(ENV_GGUF).ok().as_deref(),
+        env::var(ENV_MODEL_DIR).ok().as_deref(),
+        env::var(ENV_MAX).ok().as_deref(),
+    )
 }
 
 fn collect_gguf(dir: &Path, depth: usize, max_depth: usize, out: &mut Vec<PathBuf>) {
@@ -275,43 +289,83 @@ fn real_gguf_moe_extract_when_present() {
     }
 }
 
+/// Generate a unique temporary path under `std::env::temp_dir()`.
+fn unique_tmp(prefix: &str) -> PathBuf {
+    let pid = process::id();
+    for _ in 0..10 {
+        let n = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = env::temp_dir().join(format!("{prefix}_{pid}_{n}"));
+        if !path.exists() {
+            return path;
+        }
+    }
+    panic!("could not generate a unique temporary path");
+}
+
+struct TempFile(PathBuf);
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+struct TempDir(PathBuf);
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
 #[test]
 fn real_gguf_helpers_document_env() {
     // Always runs in CI: documents the pilot contract and exercises the
-    // env-dependent helpers in a controlled, single-threaded test context.
+    // env-dependent helpers without mutating the process environment.
     assert_eq!(ENV_GGUF, "ENGRAM_GGUF");
     assert_eq!(ENV_MODEL_DIR, "ENGRAM_MODEL_DIR");
     assert_eq!(ENV_MAX, "ENGRAM_GGUF_MAX");
     assert_eq!(ENV_EXPECT_MOE, "ENGRAM_EXPECT_MOE");
     assert_eq!(ENV_MOE_SAMPLES, "ENGRAM_MOE_SAMPLES");
 
-    let prev_moe = env::var_os(ENV_MOE_SAMPLES);
-    let prev_gguf = env::var_os(ENV_GGUF);
+    // expect_moe parsing
+    assert!(!expect_moe_from(None));
+    assert!(expect_moe_from(Some("1")));
+    assert!(expect_moe_from(Some("YES")));
+    assert!(!expect_moe_from(Some("no")));
 
-    // SAFETY: env mutation is isolated to this single-threaded test process.
-    unsafe {
-        env::set_var(ENV_MOE_SAMPLES, "7");
-    }
-    assert_eq!(moe_sample_count(), 7);
-    unsafe {
-        env::set_var(ENV_MOE_SAMPLES, "0");
-    }
-    assert_eq!(moe_sample_count(), 1); // clamped to 1
-    match prev_moe {
-        Some(v) => unsafe { env::set_var(ENV_MOE_SAMPLES, v) },
-        None => unsafe { env::remove_var(ENV_MOE_SAMPLES) },
-    }
+    // moe_sample_count parsing and clamping
+    assert_eq!(moe_sample_count_from(Some("7")), 7);
+    assert_eq!(moe_sample_count_from(Some("0")), 1);
+    assert_eq!(moe_sample_count_from(None), 1);
 
-    // pilot_gguf_paths resolves a single ENGRAM_GGUF file.
-    let tmp = env::temp_dir().join(format!("engram_helpers_test_{}.gguf", process::id()));
-    fs::File::create(&tmp).expect("create temp file");
-    unsafe {
-        env::set_var(ENV_GGUF, &tmp);
-    }
-    assert_eq!(pilot_gguf_paths(), vec![tmp.clone()]);
-    match prev_gguf {
-        Some(v) => unsafe { env::set_var(ENV_GGUF, v) },
-        None => unsafe { env::remove_var(ENV_GGUF) },
-    }
-    let _ = fs::remove_file(&tmp);
+    // pilot_gguf_paths resolves a single file.
+    let tmp = unique_tmp("engram_helpers_file");
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .expect("create temp file");
+    let _file_guard = TempFile(tmp.clone());
+    assert_eq!(
+        pilot_gguf_paths_from(Some(tmp.to_str().unwrap()), None, None),
+        vec![tmp.clone()]
+    );
+    assert!(pilot_gguf_paths_from(Some("/does/not/exist"), None, None).is_empty());
+
+    // pilot_gguf_paths scans a directory for *.gguf.
+    let dir = unique_tmp("engram_helpers_dir");
+    fs::create_dir(&dir).expect("create temp dir");
+    let _dir_guard = TempDir(dir.clone());
+    let gf = dir.join("model.gguf");
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&gf)
+        .expect("create temp gguf file");
+    assert_eq!(
+        pilot_gguf_paths_from(None, Some(dir.to_str().unwrap()), Some("5")),
+        vec![gf]
+    );
 }
