@@ -338,3 +338,41 @@ impl<'a> GgufCursor<'a> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn push_u32(out: &mut Vec<u8>, v: u32) {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+
+    fn push_u64(out: &mut Vec<u8>, v: u64) {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+
+    #[test]
+    fn skip_array_value_handles_deep_nesting() {
+        // Build a 32-level nested array of arrays ending in an empty UINT8 array.
+        const DEPTH: usize = 32;
+        let mut bytes = Vec::with_capacity(DEPTH * 12);
+        for level in 0..DEPTH {
+            if level == DEPTH - 1 {
+                push_u32(&mut bytes, GGUF_VALUE_TYPE_UINT8);
+            } else {
+                push_u32(&mut bytes, GGUF_VALUE_TYPE_ARRAY);
+            }
+            push_u64(&mut bytes, if level == DEPTH - 1 { 0 } else { 1 });
+        }
+
+        let mut cursor = GgufCursor::new(&bytes, "mem://deep-array");
+        cursor
+            .skip_value(GGUF_VALUE_TYPE_ARRAY)
+            .expect("skip deep array");
+        assert_eq!(
+            cursor.offset,
+            bytes.len(),
+            "did not consume entire nested array"
+        );
+    }
+}
