@@ -61,7 +61,7 @@ after you commit any files that `cargo fmt` rewrote.
 Optional one-liner (check-only; does not rewrite):
 
 ```bash
-cd ~/Limen-Neural/engram-parser && \
+cd ~/rmems/engram-parser && \
   cargo fmt --check && \
   cargo clippy --all-targets --all-features -- -D warnings && \
   cargo build --all-features && \
@@ -140,7 +140,7 @@ cargo install cargo-llvm-cov --locked
 rustup component add llvm-tools-preview
 
 # correct: subcommand after cargo (same as CI)
-cd ~/Limen-Neural/engram-parser
+cd ~/rmems/engram-parser
 cargo llvm-cov --all-targets --all-features --locked --lcov --output-path lcov.info
 
 # human-readable summary only (no lcov file)
@@ -180,7 +180,7 @@ rustc +1.97.1 -V
 **Then build/test on MSRV** (from repo root):
 
 ```bash
-cd ~/Limen-Neural/engram-parser
+cd ~/rmems/engram-parser
 
 # Preferred: explicit +toolchain (overrides rust-toolchain.toml for this command)
 cargo +1.97.1 fmt --check
@@ -244,7 +244,7 @@ pilots on real weights locally**.
 ### T1 — real GGUF pilots (this repo, CPU only)
 
 ```bash
-cd ~/Limen-Neural/engram-parser
+cd ~/rmems/engram-parser
 
 # Single file (any dense or MoE GGUF under ~/.models, ollama export, etc.)
 ENGRAM_GGUF=~/.models/gguf/Abiray/ZAYA1-8B-GGUF/ZAYA1-8B-Q8_0.gguf \

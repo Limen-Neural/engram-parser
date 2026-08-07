@@ -1,6 +1,6 @@
 # engram-parser
 
-[![CI](https://github.com/Limen-Neural/engram-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/Limen-Neural/engram-parser/actions/workflows/ci.yml)
+[![CI](https://github.com/rmems/engram-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/rmems/engram-parser/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
 Pure-Rust, **zero-dependency** `.gguf` deserializer and
@@ -42,7 +42,7 @@ This crate **does not own**:
 - CUDA/GPU/SIMD execution.
 - Tokenization, inference orchestration, or SNN dynamics.
 - Full checkpoint routing or model-family adapters (see
-  [`cortex-tensor`](https://github.com/Limen-Neural/cortex-tensor)).
+  [`cortex-tensor`](https://github.com/rmems/cortex-tensor)).
 
 **Allowed dependencies:** none — `[dependencies]` stays empty.
 
@@ -52,13 +52,13 @@ adapters.
 | Crate | Role |
 |-------|------|
 | `engram-parser` | GGUF parse + per-expert weight extraction |
-| [`cortex-tensor`](https://github.com/Limen-Neural/cortex-tensor) | Tensor math + MoE routing on extracted weights |
-| [`hybrid-fusion`](https://github.com/Limen-Neural/hybrid-fusion) | ANN→SNN orchestration |
+| [`cortex-tensor`](https://github.com/rmems/cortex-tensor) | Tensor math + MoE routing on extracted weights |
+| [`hybrid-fusion`](https://github.com/rmems/hybrid-fusion) | ANN→SNN orchestration |
 | [`neuromod`](https://github.com/Limen-Neural/neuromod) | SNN neuron dynamics (downstream consumer) |
 
 See [LIM-9](https://linear.app/saaq-spiking-adaptive-activity/issue/LIM-9/plan-rust-runtime-and-deployment-repo-boundary-matrix)
 for the full Rust runtime/deployment boundary matrix and
-[issue #4](https://github.com/Limen-Neural/engram-parser/issues/4) for
+[issue #4](https://github.com/rmems/engram-parser/issues/4) for
 this repo's tracking issue.
 
 
@@ -69,9 +69,9 @@ using one-way inspiration from the experimental
 [`rmems/corinth-canal`](https://github.com/rmems/corinth-canal) reference
 implementation (**no** runtime dependency on corinth-canal).
 
-- Tracking: [engram-parser#7](https://github.com/Limen-Neural/engram-parser/issues/7)
+- Tracking: [engram-parser#7](https://github.com/rmems/engram-parser/issues/7)
 - Corinth migration companion: [corinth-canal#115](https://github.com/rmems/corinth-canal/issues/115)
-- Cortex coordination: [cortex-tensor#8](https://github.com/Limen-Neural/cortex-tensor/issues/8)
+- Cortex coordination: [cortex-tensor#8](https://github.com/rmems/cortex-tensor/issues/8)
 - Linear: [LIM-123](https://linear.app/rpd-34/issue/LIM-123), [LIM-88](https://linear.app/rpd-34/issue/LIM-88)
 
 **GGUF wire types vs “GGML”:** GGUF stores each tensor’s dtype as a
@@ -131,8 +131,8 @@ falls back to `general.file_type` (`0→F32`, `1→F16`, else `GGUF(n)`).
 - **engram-parser** (this crate): canonical zero-dep GGUF v3 deserializer + per-expert MoE raw weight ripper.
 - Safetensors extraction (header inspection, deterministic manifest, MoE router/expert candidate discovery via classify + groups + layout families) from `rmems/corinth-canal` (experimental source of inspiration) is tracked as a **separate issue** in this repo: #10 (parallel to the GGUF work in #7).
   - Source-side bootstrap/supporting: rmems/corinth-canal#116.
-  - Coordination for consumers (e.g. future multi-format in cortex): Limen-Neural/cortex-tensor#9.
-  - The reusable implementation will target a dedicated Limen-Neural crate (per org boundary matrix LIM-9); engram-parser charter remains GGUF-only.
+  - Coordination for consumers (e.g. future multi-format in cortex): rmems/cortex-tensor#9.
+  - The reusable implementation will target a dedicated rmems crate (per org boundary matrix LIM-9); engram-parser charter remains GGUF-only.
 - **Clarification**: one-way extraction/copy of code from inspiration. We are not adding any dependency from corinth-canal. corinth-canal keeps an unmodified reference copy (per its PROMOTION_RULES "frozen" status). See #10, #7, and the plan for full cross-links and "no dep on corinth-canal" language.
 
 Cross-links and updates performed when #10 was created.
@@ -178,7 +178,7 @@ docker build -t engram-parser .
 docker run --rm engram-parser
 
 # Pull from GHCR (published on merges to main)
-docker pull ghcr.io/limen-neural/engram-parser:main
+docker pull ghcr.io/rmems/engram-parser:main
 ```
 
 ## CI
@@ -211,8 +211,12 @@ Local development defaults to the toolchain in [`rust-toolchain.toml`](rust-tool
 - Bumps are considered breaking changes and follow semver conventions
 - Justification is required when bumping MSRV (e.g., dependency requirements, critical features)
 
-See [issue #14](https://github.com/Limen-Neural/engram-parser/issues/14) for the full MSRV policy discussion.
+See [issue #14](https://github.com/rmems/engram-parser/issues/14) for the full MSRV policy discussion.
 
+## Wiki
+
+This repository intentionally does not use a GitHub Wiki; documentation lives in
+`README.md` and `REVIEW.md`.
 
 ## License
 
