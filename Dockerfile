@@ -20,6 +20,7 @@ ARG RUST_VERSION=1.97.1
 FROM rust:${RUST_VERSION}-slim
 
 ARG RUST_VERSION
+ENV RUST_VERSION=${RUST_VERSION}
 
 RUN useradd -m -u 10001 appuser
 
@@ -42,4 +43,4 @@ RUN chown -R appuser:appuser /app
 
 USER appuser
 
-CMD ["cargo", "test", "--release", "--all-features"]
+CMD rustup run ${RUST_VERSION} cargo test --release --all-features

@@ -235,7 +235,8 @@ fn metadata_helpers_basic() {
         layout.metadata.string("general.name"),
         Some("Qwen2-MoE-A2.7B")
     );
-    assert!((layout.metadata.float32("qwen2moe.rope_freq_base").unwrap() - 10_000.0).abs() < 1e-6);
+    let rope_freq = layout.metadata.float32("qwen2moe.rope_freq_base").unwrap();
+    assert!((rope_freq - 10_000.0).abs() < 1e-6);
 }
 
 #[test]
