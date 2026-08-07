@@ -38,6 +38,27 @@ pub const GGUF_VALUE_TYPE_UINT64: u32 = 10;
 pub const GGUF_VALUE_TYPE_INT64: u32 = 11;
 pub const GGUF_VALUE_TYPE_FLOAT64: u32 = 12;
 
+fn is_signed_layout_type(value_type: u32) -> bool {
+    matches!(
+        value_type,
+        GGUF_VALUE_TYPE_INT8
+            | GGUF_VALUE_TYPE_INT16
+            | GGUF_VALUE_TYPE_INT32
+            | GGUF_VALUE_TYPE_INT64
+    )
+}
+
+fn is_unsigned_layout_type(value_type: u32) -> bool {
+    matches!(
+        value_type,
+        GGUF_VALUE_TYPE_UINT8
+            | GGUF_VALUE_TYPE_UINT16
+            | GGUF_VALUE_TYPE_UINT32
+            | GGUF_VALUE_TYPE_UINT64
+            | GGUF_VALUE_TYPE_BOOL
+    )
+}
+
 fn nonneg_signed(path: &str, v: i64) -> Result<u64> {
     u64::try_from(v).map_err(|_| {
         invalid_layout(
@@ -185,37 +206,30 @@ impl<'a> GgufCursor<'a> {
         Ok(self.read_i64()? as u64)
     }
 
+    fn read_signed_as_i64(&mut self, value_type: u32) -> Result<i64> {
+        match value_type {
+            GGUF_VALUE_TYPE_INT8 => Ok(self.read_u8()? as i8 as i64),
+            GGUF_VALUE_TYPE_INT16 => Ok(self.read_i16()? as i64),
+            GGUF_VALUE_TYPE_INT32 => Ok(self.read_i32()? as i64),
+            GGUF_VALUE_TYPE_INT64 => Ok(self.read_i64()?),
+            other => unreachable!("caller filters signed types, got {other}"),
+        }
+    }
+
     /// Read a non-negative layout value (e.g. `general.alignment`).
     ///
     /// Rejects signed negatives so they do not wrap into huge alignments.
     /// Other signed KV pairs should use [`Self::read_numeric_as_u64`] instead.
     pub(crate) fn read_nonneg_layout_usize(&mut self, value_type: u32) -> Result<usize> {
-        let v = match value_type {
-            GGUF_VALUE_TYPE_UINT8 => self.read_u8()? as u64,
-            GGUF_VALUE_TYPE_UINT16 => self.read_u16()? as u64,
-            GGUF_VALUE_TYPE_UINT32 => self.read_u32()? as u64,
-            GGUF_VALUE_TYPE_UINT64 | GGUF_VALUE_TYPE_BOOL => self.read_u64()?,
-            GGUF_VALUE_TYPE_INT8 => {
-                let s = self.read_u8()? as i8;
-                nonneg_signed(self.path, i64::from(s))?
-            }
-            GGUF_VALUE_TYPE_INT16 => {
-                let s = self.read_i16()?;
-                nonneg_signed(self.path, i64::from(s))?
-            }
-            GGUF_VALUE_TYPE_INT32 => {
-                let s = self.read_i32()?;
-                nonneg_signed(self.path, i64::from(s))?
-            }
-            GGUF_VALUE_TYPE_INT64 => {
-                let s = self.read_i64()?;
-                nonneg_signed(self.path, s)?
-            }
-            other => {
-                return Err(self.unsupported(format!(
-                    "expected integer GGUF value for layout field, got type {other}"
-                )));
-            }
+        let v = if is_signed_layout_type(value_type) {
+            let s = self.read_signed_as_i64(value_type)?;
+            nonneg_signed(self.path, s)?
+        } else if is_unsigned_layout_type(value_type) {
+            self.read_numeric_as_u64(value_type)?
+        } else {
+            return Err(self.unsupported(format!(
+                "expected integer GGUF value for layout field, got type {value_type}"
+            )));
         };
         Ok(v as usize)
     }

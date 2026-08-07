@@ -617,36 +617,41 @@ mod tests {
 
     #[test]
     fn ggml_type_label_known_codes() {
-        assert_eq!(ggml_type_label(GGML_TYPE_F32), "F32");
-        assert_eq!(ggml_type_label(GGML_TYPE_F16), "F16");
-        assert_eq!(ggml_type_label(GGML_TYPE_Q4_0), "Q4_0");
-        assert_eq!(ggml_type_label(GGML_TYPE_Q8_0), "Q8_0");
-        assert_eq!(ggml_type_label(GGML_TYPE_Q2_K), "Q2_K");
-        assert_eq!(ggml_type_label(GGML_TYPE_Q6_K), "Q6_K");
-        assert_eq!(ggml_type_label(GGML_TYPE_IQ3_S), "IQ3_S");
-        assert_eq!(ggml_type_label(GGML_TYPE_Q4_0_4_4), "Q4_0_4_4");
-        assert_eq!(ggml_type_label(GGML_TYPE_BF16), "BF16");
-        assert_eq!(ggml_type_label(GGML_TYPE_F64), "F64");
-        assert_eq!(ggml_type_label(GGML_TYPE_I8), "I8");
-        assert_eq!(ggml_type_label(GGML_TYPE_I16), "I16");
-        assert_eq!(ggml_type_label(GGML_TYPE_I32), "I32");
-        assert_eq!(ggml_type_label(GGML_TYPE_I64), "I64");
-        assert_eq!(ggml_type_label(GGML_TYPE_IQ1_M), "IQ1_M");
-        assert_eq!(ggml_type_label(GGML_TYPE_IQ1_S), "IQ1_S");
-        assert_eq!(ggml_type_label(GGML_TYPE_IQ2_XXS), "IQ2_XXS");
-        assert_eq!(ggml_type_label(GGML_TYPE_IQ2_XS), "IQ2_XS");
-        assert_eq!(ggml_type_label(GGML_TYPE_IQ2_S), "IQ2_S");
-        assert_eq!(ggml_type_label(GGML_TYPE_IQ3_XXS), "IQ3_XXS");
-        assert_eq!(ggml_type_label(GGML_TYPE_IQ4_NL), "IQ4_NL");
-        assert_eq!(ggml_type_label(GGML_TYPE_IQ4_XS), "IQ4_XS");
-        assert_eq!(ggml_type_label(GGML_TYPE_Q4_1), "Q4_1");
-        assert_eq!(ggml_type_label(GGML_TYPE_Q5_0), "Q5_0");
-        assert_eq!(ggml_type_label(GGML_TYPE_Q5_1), "Q5_1");
-        assert_eq!(ggml_type_label(GGML_TYPE_Q8_1), "Q8_1");
-        assert_eq!(ggml_type_label(GGML_TYPE_Q3_K), "Q3_K");
-        assert_eq!(ggml_type_label(GGML_TYPE_Q4_K), "Q4_K");
-        assert_eq!(ggml_type_label(GGML_TYPE_Q5_K), "Q5_K");
-        assert_eq!(ggml_type_label(GGML_TYPE_Q8_K), "Q8_K");
+        let cases = [
+            (GGML_TYPE_F32, "F32"),
+            (GGML_TYPE_F16, "F16"),
+            (GGML_TYPE_Q4_0, "Q4_0"),
+            (GGML_TYPE_Q8_0, "Q8_0"),
+            (GGML_TYPE_Q2_K, "Q2_K"),
+            (GGML_TYPE_Q6_K, "Q6_K"),
+            (GGML_TYPE_IQ3_S, "IQ3_S"),
+            (GGML_TYPE_Q4_0_4_4, "Q4_0_4_4"),
+            (GGML_TYPE_BF16, "BF16"),
+            (GGML_TYPE_F64, "F64"),
+            (GGML_TYPE_I8, "I8"),
+            (GGML_TYPE_I16, "I16"),
+            (GGML_TYPE_I32, "I32"),
+            (GGML_TYPE_I64, "I64"),
+            (GGML_TYPE_IQ1_M, "IQ1_M"),
+            (GGML_TYPE_IQ1_S, "IQ1_S"),
+            (GGML_TYPE_IQ2_XXS, "IQ2_XXS"),
+            (GGML_TYPE_IQ2_XS, "IQ2_XS"),
+            (GGML_TYPE_IQ2_S, "IQ2_S"),
+            (GGML_TYPE_IQ3_XXS, "IQ3_XXS"),
+            (GGML_TYPE_IQ4_NL, "IQ4_NL"),
+            (GGML_TYPE_IQ4_XS, "IQ4_XS"),
+            (GGML_TYPE_Q4_1, "Q4_1"),
+            (GGML_TYPE_Q5_0, "Q5_0"),
+            (GGML_TYPE_Q5_1, "Q5_1"),
+            (GGML_TYPE_Q8_1, "Q8_1"),
+            (GGML_TYPE_Q3_K, "Q3_K"),
+            (GGML_TYPE_Q4_K, "Q4_K"),
+            (GGML_TYPE_Q5_K, "Q5_K"),
+            (GGML_TYPE_Q8_K, "Q8_K"),
+        ];
+        for (code, expected) in cases {
+            assert_eq!(ggml_type_label(code), expected, "label for code {code}");
+        }
     }
 
     #[test]
@@ -760,36 +765,41 @@ mod tests {
 
     #[test]
     fn ggml_type_constants_match_values() {
-        assert_eq!(GGML_TYPE_F32, 0);
-        assert_eq!(GGML_TYPE_F16, 1);
-        assert_eq!(GGML_TYPE_Q4_0, 2);
-        assert_eq!(GGML_TYPE_Q4_1, 3);
-        assert_eq!(GGML_TYPE_Q5_0, 6);
-        assert_eq!(GGML_TYPE_Q5_1, 7);
-        assert_eq!(GGML_TYPE_Q8_0, 8);
-        assert_eq!(GGML_TYPE_Q8_1, 9);
-        assert_eq!(GGML_TYPE_Q2_K, 10);
-        assert_eq!(GGML_TYPE_Q3_K, 11);
-        assert_eq!(GGML_TYPE_Q4_K, 12);
-        assert_eq!(GGML_TYPE_Q5_K, 13);
-        assert_eq!(GGML_TYPE_Q6_K, 14);
-        assert_eq!(GGML_TYPE_Q8_K, 15);
-        assert_eq!(GGML_TYPE_IQ2_XXS, 16);
-        assert_eq!(GGML_TYPE_IQ2_XS, 17);
-        assert_eq!(GGML_TYPE_IQ3_XXS, 18);
-        assert_eq!(GGML_TYPE_IQ1_S, 19);
-        assert_eq!(GGML_TYPE_IQ4_NL, 20);
-        assert_eq!(GGML_TYPE_IQ3_S, 21);
-        assert_eq!(GGML_TYPE_IQ2_S, 22);
-        assert_eq!(GGML_TYPE_IQ4_XS, 23);
-        assert_eq!(GGML_TYPE_I8, 24);
-        assert_eq!(GGML_TYPE_I16, 25);
-        assert_eq!(GGML_TYPE_I32, 26);
-        assert_eq!(GGML_TYPE_I64, 27);
-        assert_eq!(GGML_TYPE_F64, 28);
-        assert_eq!(GGML_TYPE_IQ1_M, 29);
-        assert_eq!(GGML_TYPE_BF16, 30);
-        assert_eq!(GGML_TYPE_Q4_0_4_4, 31);
+        let cases = [
+            (GGML_TYPE_F32, 0),
+            (GGML_TYPE_F16, 1),
+            (GGML_TYPE_Q4_0, 2),
+            (GGML_TYPE_Q4_1, 3),
+            (GGML_TYPE_Q5_0, 6),
+            (GGML_TYPE_Q5_1, 7),
+            (GGML_TYPE_Q8_0, 8),
+            (GGML_TYPE_Q8_1, 9),
+            (GGML_TYPE_Q2_K, 10),
+            (GGML_TYPE_Q3_K, 11),
+            (GGML_TYPE_Q4_K, 12),
+            (GGML_TYPE_Q5_K, 13),
+            (GGML_TYPE_Q6_K, 14),
+            (GGML_TYPE_Q8_K, 15),
+            (GGML_TYPE_IQ2_XXS, 16),
+            (GGML_TYPE_IQ2_XS, 17),
+            (GGML_TYPE_IQ3_XXS, 18),
+            (GGML_TYPE_IQ1_S, 19),
+            (GGML_TYPE_IQ4_NL, 20),
+            (GGML_TYPE_IQ3_S, 21),
+            (GGML_TYPE_IQ2_S, 22),
+            (GGML_TYPE_IQ4_XS, 23),
+            (GGML_TYPE_I8, 24),
+            (GGML_TYPE_I16, 25),
+            (GGML_TYPE_I32, 26),
+            (GGML_TYPE_I64, 27),
+            (GGML_TYPE_F64, 28),
+            (GGML_TYPE_IQ1_M, 29),
+            (GGML_TYPE_BF16, 30),
+            (GGML_TYPE_Q4_0_4_4, 31),
+        ];
+        for (constant, expected) in cases {
+            assert_eq!(constant, expected, "constant value mismatch");
+        }
     }
 
     #[test]

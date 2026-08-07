@@ -4,106 +4,10 @@
 //! and verify that expert extraction round-trips both the stacked and
 //! per-expert storage conventions.
 
+mod common;
+use common::*;
+
 use engram_parser::{DType, extract_expert, list_experts, parse_bytes};
-
-const GGUF_MAGIC: [u8; 4] = *b"GGUF";
-const GGUF_VERSION: u32 = 3;
-const ALIGNMENT: u32 = 32;
-
-// Value types.
-const VT_UINT32: u32 = 4;
-const VT_STRING: u32 = 8;
-
-// Dtypes (GGUF wire type ids).
-const GGML_F32: u32 = 0;
-const GGML_Q8_0: u32 = 8;
-const GGML_Q4_K: u32 = 12;
-const GGML_IQ3_S: u32 = 21;
-
-fn push_u32(out: &mut Vec<u8>, v: u32) {
-    out.extend_from_slice(&v.to_le_bytes());
-}
-fn push_u64(out: &mut Vec<u8>, v: u64) {
-    out.extend_from_slice(&v.to_le_bytes());
-}
-fn push_string(out: &mut Vec<u8>, s: &str) {
-    push_u64(out, s.len() as u64);
-    out.extend_from_slice(s.as_bytes());
-}
-fn push_kv_u32(out: &mut Vec<u8>, key: &str, v: u32) {
-    push_string(out, key);
-    push_u32(out, VT_UINT32);
-    push_u32(out, v);
-}
-fn push_kv_string(out: &mut Vec<u8>, key: &str, v: &str) {
-    push_string(out, key);
-    push_u32(out, VT_STRING);
-    push_string(out, v);
-}
-
-struct TensorSpec {
-    name: &'static str,
-    dims: Vec<usize>,
-    ggml_type: u32,
-    payload: Vec<u8>,
-}
-
-fn build_gguf(kv: &[(&str, KvValue)], tensors: &[TensorSpec]) -> Vec<u8> {
-    let mut out = Vec::new();
-    out.extend_from_slice(&GGUF_MAGIC);
-    push_u32(&mut out, GGUF_VERSION);
-    push_u64(&mut out, tensors.len() as u64);
-    push_u64(&mut out, kv.len() as u64);
-
-    for (key, value) in kv {
-        match value {
-            KvValue::U32(v) => push_kv_u32(&mut out, key, *v),
-            KvValue::Str(v) => push_kv_string(&mut out, key, v),
-            KvValue::F32(v) => {
-                push_string(&mut out, key);
-                push_u32(&mut out, 6); // VT_F32
-                out.extend_from_slice(&v.to_le_bytes());
-            }
-        }
-    }
-
-    // First pass: tensor directory with relative offsets.
-    let mut cum: usize = 0;
-    for spec in tensors {
-        push_string(&mut out, spec.name);
-        push_u32(&mut out, spec.dims.len() as u32);
-        for &d in &spec.dims {
-            push_u64(&mut out, d as u64);
-        }
-        push_u32(&mut out, spec.ggml_type);
-        push_u64(&mut out, cum as u64);
-        cum += spec.payload.len();
-    }
-
-    // Align then write payloads.
-    while out.len() % ALIGNMENT as usize != 0 {
-        out.push(0);
-    }
-    for spec in tensors {
-        out.extend_from_slice(&spec.payload);
-    }
-    out
-}
-
-#[allow(dead_code)]
-enum KvValue {
-    U32(u32),
-    Str(&'static str),
-    F32(f32),
-}
-
-fn f32_vec_to_le_bytes(data: &[f32]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(data.len() * 4);
-    for v in data {
-        out.extend_from_slice(&v.to_le_bytes());
-    }
-    out
-}
 
 #[test]
 fn parses_magic_and_metadata() {
@@ -307,17 +211,7 @@ fn expert_out_of_range() {
     assert!(msg.contains("expert index out of range"), "got: {msg}");
 }
 
-#[test]
-fn metadata_helper_methods() {
-    // Value type for f32
-    const VT_F32: u32 = 6;
-
-    fn push_kv_f32(out: &mut Vec<u8>, key: &str, v: f32) {
-        push_string(out, key);
-        push_u32(out, VT_F32);
-        out.extend_from_slice(&v.to_le_bytes());
-    }
-
+fn metadata_layout() -> engram_parser::GgufLayout {
     let kv = [
         ("general.architecture", KvValue::Str("qwen2moe")),
         ("general.quantization_type", KvValue::Str("Q4_K_M")),
@@ -328,43 +222,38 @@ fn metadata_helper_methods() {
         ("qwen2moe.attention.head_count", KvValue::U32(16)),
         ("general.name", KvValue::Str("Qwen2-MoE-A2.7B")),
     ];
+    parse_bytes(build_gguf(&kv, &[]), "mem://metadata".into()).expect("parse")
+}
 
-    // Build custom GGUF with f32 metadata
-    let mut out = Vec::new();
-    out.extend_from_slice(&GGUF_MAGIC);
-    push_u32(&mut out, GGUF_VERSION);
-    push_u64(&mut out, 0); // no tensors
-    push_u64(&mut out, kv.len() as u64);
-
-    for (key, value) in &kv {
-        match value {
-            KvValue::U32(v) => push_kv_u32(&mut out, key, *v),
-            KvValue::Str(v) => push_kv_string(&mut out, key, v),
-            KvValue::F32(v) => push_kv_f32(&mut out, key, *v),
-        }
-    }
-
-    // Align
-    while out.len() % ALIGNMENT as usize != 0 {
-        out.push(0);
-    }
-
-    let layout = parse_bytes(out, "mem://metadata".into()).expect("parse");
-
-    // Test all metadata helpers
+#[test]
+fn metadata_helpers_basic() {
+    let layout = metadata_layout();
     assert_eq!(layout.metadata.architecture(), "qwen2moe");
     assert_eq!(layout.metadata.quantization(), "Q4_K_M");
-    assert_eq!(layout.metadata.block_count(), Some(28));
-    assert_eq!(layout.metadata.expert_count(), Some(64));
-    assert_eq!(layout.metadata.expert_used_count(), Some(8));
-    assert_eq!(layout.metadata.embedding_length(), Some(2048));
-    assert_eq!(layout.metadata.head_count(), Some(16));
     assert_eq!(
         layout.metadata.string("general.name"),
         Some("Qwen2-MoE-A2.7B")
     );
+}
 
-    // Test missing keys return None
+#[test]
+fn metadata_helpers_counts() {
+    let layout = metadata_layout();
+    assert_eq!(layout.metadata.block_count(), Some(28));
+    assert_eq!(layout.metadata.expert_count(), Some(64));
+    assert_eq!(layout.metadata.expert_used_count(), Some(8));
+}
+
+#[test]
+fn metadata_helpers_geometry() {
+    let layout = metadata_layout();
+    assert_eq!(layout.metadata.embedding_length(), Some(2048));
+    assert_eq!(layout.metadata.head_count(), Some(16));
+}
+
+#[test]
+fn metadata_helpers_missing() {
+    let layout = metadata_layout();
     assert_eq!(layout.metadata.string("nonexistent"), None);
     assert_eq!(layout.metadata.float32("nonexistent"), None);
 }
@@ -376,28 +265,8 @@ fn metadata_helpers_with_alternative_keys() {
         ("mixtral.num_experts", KvValue::U32(8)),
         ("mixtral.num_experts_per_tok", KvValue::U32(2)),
     ];
+    let layout = parse_bytes(build_gguf(&kv, &[]), "mem://alt-keys".into()).expect("parse");
 
-    let mut out = Vec::new();
-    out.extend_from_slice(&GGUF_MAGIC);
-    push_u32(&mut out, GGUF_VERSION);
-    push_u64(&mut out, 0);
-    push_u64(&mut out, kv.len() as u64);
-
-    for (key, value) in &kv {
-        match value {
-            KvValue::U32(v) => push_kv_u32(&mut out, key, *v),
-            KvValue::Str(v) => push_kv_string(&mut out, key, v),
-            KvValue::F32(_) => unreachable!(),
-        }
-    }
-
-    while out.len() % ALIGNMENT as usize != 0 {
-        out.push(0);
-    }
-
-    let layout = parse_bytes(out, "mem://alt-keys".into()).expect("parse");
-
-    // Should find alternative keys
     assert_eq!(layout.metadata.expert_count(), Some(8));
     assert_eq!(layout.metadata.expert_used_count(), Some(2));
 }
@@ -405,27 +274,8 @@ fn metadata_helpers_with_alternative_keys() {
 #[test]
 fn metadata_helpers_with_unknown_architecture() {
     let kv = [("some.block_count", KvValue::U32(10))];
+    let layout = parse_bytes(build_gguf(&kv, &[]), "mem://no-arch".into()).expect("parse");
 
-    let mut out = Vec::new();
-    out.extend_from_slice(&GGUF_MAGIC);
-    push_u32(&mut out, GGUF_VERSION);
-    push_u64(&mut out, 0);
-    push_u64(&mut out, kv.len() as u64);
-
-    for (key, value) in &kv {
-        match value {
-            KvValue::U32(v) => push_kv_u32(&mut out, key, *v),
-            _ => unreachable!(),
-        }
-    }
-
-    while out.len() % ALIGNMENT as usize != 0 {
-        out.push(0);
-    }
-
-    let layout = parse_bytes(out, "mem://no-arch".into()).expect("parse");
-
-    // Should return "unknown" and None for arch-specific queries
     assert_eq!(layout.metadata.architecture(), "unknown");
     assert_eq!(layout.metadata.quantization(), "unknown");
     assert_eq!(layout.metadata.block_count(), None);
@@ -436,74 +286,93 @@ fn metadata_helpers_with_unknown_architecture() {
 fn ggml_type_label_function() {
     use engram_parser::ggml_type_label;
 
-    // Test common types
-    assert_eq!(ggml_type_label(0), "F32");
-    assert_eq!(ggml_type_label(1), "F16");
-    assert_eq!(ggml_type_label(2), "Q4_0");
-    assert_eq!(ggml_type_label(3), "Q4_1");
-    assert_eq!(ggml_type_label(8), "Q8_0");
-    assert_eq!(ggml_type_label(10), "Q2_K");
-    assert_eq!(ggml_type_label(12), "Q4_K");
-    assert_eq!(ggml_type_label(13), "Q5_K");
-    assert_eq!(ggml_type_label(14), "Q6_K");
-    assert_eq!(ggml_type_label(21), "IQ3_S");
-    assert_eq!(ggml_type_label(30), "BF16");
-    assert_eq!(ggml_type_label(31), "Q4_0_4_4");
-    assert_ne!(ggml_type_label(31), "IQ3_M");
+    let cases = [
+        (0, "F32"),
+        (1, "F16"),
+        (2, "Q4_0"),
+        (3, "Q4_1"),
+        (8, "Q8_0"),
+        (10, "Q2_K"),
+        (12, "Q4_K"),
+        (13, "Q5_K"),
+        (14, "Q6_K"),
+        (21, "IQ3_S"),
+        (30, "BF16"),
+        (31, "Q4_0_4_4"),
+    ];
+    for (code, expected) in cases {
+        assert_eq!(ggml_type_label(code), expected, "label for code {code}");
+    }
 
-    // Test unknown type
+    assert_ne!(ggml_type_label(31), "IQ3_M");
     assert_eq!(ggml_type_label(999), "unknown");
 }
 
 #[test]
-fn dtype_enum_comprehensive() {
+fn dtype_f32_roundtrip() {
     use engram_parser::DType;
 
-    // Test F32
-    let f32_dtype = DType::from_ggml_type(0);
-    assert_eq!(f32_dtype, DType::F32);
-    assert_eq!(f32_dtype.ggml_type(), 0);
-    assert_eq!(f32_dtype.byte_len_for_elements(100), Some(400));
-    assert!(f32_dtype.has_known_byte_layout());
+    let dt = DType::from_ggml_type(0);
+    assert_eq!(dt, DType::F32);
+    assert_eq!(dt.ggml_type(), 0);
+    assert_eq!(dt.byte_len_for_elements(100), Some(400));
+    assert!(dt.has_known_byte_layout());
+}
 
-    // Test Q4_K
-    let q4k_dtype = DType::from_ggml_type(12);
-    assert_eq!(q4k_dtype, DType::Q4_K);
-    assert_eq!(q4k_dtype.ggml_type(), 12);
-    // Q4_K: 256 elements per block, 144 bytes per block
-    assert_eq!(q4k_dtype.byte_len_for_elements(256), Some(144));
-    assert_eq!(q4k_dtype.byte_len_for_elements(512), Some(288));
-    assert_eq!(q4k_dtype.byte_len_for_elements(100), None); // not aligned
+#[test]
+fn dtype_q4k_layout() {
+    use engram_parser::DType;
 
-    // Wire 31 is historical Q4_0_4_4 — layout not modeled (Other).
-    let t31 = DType::from_ggml_type(31);
-    assert_eq!(t31, DType::Other(31));
-    assert_eq!(t31.ggml_type(), 31);
-    assert_eq!(t31.byte_len_for_elements(256), None);
-    assert!(!t31.has_known_byte_layout());
-    assert_eq!(t31.label(), "Q4_0_4_4");
+    let dt = DType::from_ggml_type(12);
+    assert_eq!(dt, DType::Q4_K);
+    assert_eq!(dt.ggml_type(), 12);
+    // Q4_K: 256 elements per block, 144 bytes per block.
+    assert_eq!(dt.byte_len_for_elements(256), Some(144));
+    assert_eq!(dt.byte_len_for_elements(512), Some(288));
+    assert_eq!(dt.byte_len_for_elements(100), None); // not aligned
+}
 
-    // Test unknown type
-    let unknown_dtype = DType::from_ggml_type(999);
-    assert_eq!(unknown_dtype, DType::Other(999));
-    assert_eq!(unknown_dtype.ggml_type(), 999);
-    assert_eq!(unknown_dtype.byte_len_for_elements(100), None);
-    assert!(!unknown_dtype.has_known_byte_layout());
+#[test]
+fn dtype_wire_31_is_other() {
+    use engram_parser::DType;
+
+    let dt = DType::from_ggml_type(31);
+    assert_eq!(dt, DType::Other(31));
+    assert_eq!(dt.ggml_type(), 31);
+    assert_eq!(dt.byte_len_for_elements(256), None);
+    assert!(!dt.has_known_byte_layout());
+    assert_eq!(dt.label(), "Q4_0_4_4");
+}
+
+#[test]
+fn dtype_unknown_is_other() {
+    use engram_parser::DType;
+
+    let dt = DType::from_ggml_type(999);
+    assert_eq!(dt, DType::Other(999));
+    assert_eq!(dt.ggml_type(), 999);
+    assert_eq!(dt.byte_len_for_elements(100), None);
+    assert!(!dt.has_known_byte_layout());
 }
 
 #[test]
 fn dtype_label_method() {
     use engram_parser::DType;
 
-    assert_eq!(DType::F32.label(), "F32");
-    assert_eq!(DType::F16.label(), "F16");
-    assert_eq!(DType::Q4_0.label(), "Q4_0");
-    assert_eq!(DType::Q8_0.label(), "Q8_0");
-    assert_eq!(DType::Q4_K.label(), "Q4_K");
-    assert_eq!(DType::IQ3_S.label(), "IQ3_S");
-    assert_eq!(DType::Other(31).label(), "Q4_0_4_4");
-    assert_eq!(DType::BF16.label(), "BF16");
-    assert_eq!(DType::Other(999).label(), "unknown");
+    let cases = [
+        (DType::F32, "F32"),
+        (DType::F16, "F16"),
+        (DType::Q4_0, "Q4_0"),
+        (DType::Q8_0, "Q8_0"),
+        (DType::Q4_K, "Q4_K"),
+        (DType::IQ3_S, "IQ3_S"),
+        (DType::Other(31), "Q4_0_4_4"),
+        (DType::BF16, "BF16"),
+        (DType::Other(999), "unknown"),
+    ];
+    for (dt, expected) in cases {
+        assert_eq!(dt.label(), expected, "label for {dt:?}");
+    }
 }
 
 #[test]

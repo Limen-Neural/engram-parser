@@ -27,8 +27,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use engram_parser::{DType, extract_expert, list_experts, load_gguf};
-
 const ENV_GGUF: &str = "ENGRAM_GGUF";
 const ENV_MODEL_DIR: &str = "ENGRAM_MODEL_DIR";
 const ENV_MAX: &str = "ENGRAM_GGUF_MAX";
@@ -55,9 +53,67 @@ fn moe_sample_count() -> usize {
         .max(1)
 }
 
+use engram_parser::{DType, GgufLayout, MoeExpertWeights, extract_expert, list_experts, load_gguf};
+
+/// Assert that an extracted expert has at least one role tensor and that each
+/// role tensor has a consistent payload size for its declared dtype.
+fn assert_expert_weights_valid(path: &Path, b: usize, e: usize, w: &MoeExpertWeights) {
+    assert!(
+        w.gate.is_some() || w.up.is_some() || w.down.is_some(),
+        "{}: empty extract for ({b},{e})",
+        path.display()
+    );
+
+    for (role, opt) in [("gate", &w.gate), ("up", &w.up), ("down", &w.down)] {
+        let Some(t) = opt else { continue };
+        assert!(!t.bytes.is_empty(), "{role} empty bytes");
+        assert!(!t.dims.is_empty(), "{role} empty dims");
+
+        let expected_bytes = match t.dtype {
+            DType::F16 | DType::BF16 => t.dims.iter().product::<usize>() * 2,
+            DType::F32 => t.dims.iter().product::<usize>() * 4,
+            _ => continue,
+        };
+        assert_eq!(t.bytes.len(), expected_bytes, "{role} byte length");
+    }
+}
+
 /// Resolve pilot paths the way xai-dissect resolves checkpoint pilots:
 /// explicit file, else scan a directory for `*.gguf` (non-recursive by default
 /// depth-limited walk so huge trees stay controllable).
+fn load_and_scan(path: &Path) -> (GgufLayout, Vec<(usize, usize)>) {
+    let t0 = Instant::now();
+    let layout = load_gguf(path).expect("load");
+    let load_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let experts = list_experts(&layout);
+
+    eprintln!(
+        "moe_scan {}  arch={} quant={} expert_meta={:?} pairs={} load_ms={load_ms:.1}",
+        path.display(),
+        layout.metadata.architecture(),
+        layout.metadata.quantization(),
+        layout.metadata.expert_count(),
+        experts.len(),
+    );
+
+    (layout, experts)
+}
+
+fn extract_and_report(layout: &GgufLayout, path: &Path, b: usize, e: usize) {
+    let w = extract_expert(layout, b, e).unwrap_or_else(|err| {
+        panic!("extract_expert({}, {b}, {e}): {err}", path.display());
+    });
+
+    assert_expert_weights_valid(path, b, e, &w);
+
+    eprintln!(
+        "OK moe {}  pair=({b},{e}) complete={} stacked_gate={}",
+        path.display(),
+        w.is_complete(),
+        w.gate.as_ref().map(|g| g.stacked_slice).unwrap_or(false),
+    );
+}
+
 fn pilot_gguf_paths() -> Vec<PathBuf> {
     if let Ok(single) = env::var(ENV_GGUF) {
         let p = PathBuf::from(single);
@@ -185,19 +241,7 @@ fn real_gguf_moe_extract_when_present() {
     let mut any_moe = false;
 
     for path in paths {
-        let t0 = Instant::now();
-        let layout = load_gguf(&path).expect("load");
-        let load_ms = t0.elapsed().as_secs_f64() * 1000.0;
-
-        let experts = list_experts(&layout);
-        eprintln!(
-            "moe_scan {}  arch={} quant={} expert_meta={:?} pairs={} load_ms={load_ms:.1}",
-            path.display(),
-            layout.metadata.architecture(),
-            layout.metadata.quantization(),
-            layout.metadata.expert_count(),
-            experts.len(),
-        );
+        let (layout, experts) = load_and_scan(&path);
 
         if experts.is_empty() {
             eprintln!("skip MoE (none discovered): {}", path.display());
@@ -207,39 +251,7 @@ fn real_gguf_moe_extract_when_present() {
 
         let take = samples.min(experts.len());
         for &(b, e) in experts.iter().take(take) {
-            let w = extract_expert(&layout, b, e).unwrap_or_else(|err| {
-                panic!("extract_expert({}, {b}, {e}): {err}", path.display());
-            });
-
-            assert!(
-                w.gate.is_some() || w.up.is_some() || w.down.is_some(),
-                "{}: empty extract for ({b},{e})",
-                path.display()
-            );
-
-            for (role, opt) in [
-                ("gate", w.gate.as_ref()),
-                ("up", w.up.as_ref()),
-                ("down", w.down.as_ref()),
-            ] {
-                if let Some(t) = opt {
-                    assert!(!t.bytes.is_empty(), "{role} empty bytes");
-                    assert!(!t.dims.is_empty(), "{role} empty dims");
-                    if matches!(t.dtype, DType::F16 | DType::BF16) {
-                        assert_eq!(t.bytes.len(), t.dims.iter().product::<usize>() * 2);
-                    }
-                    if t.dtype == DType::F32 {
-                        assert_eq!(t.bytes.len(), t.dims.iter().product::<usize>() * 4);
-                    }
-                }
-            }
-
-            eprintln!(
-                "OK moe {}  pair=({b},{e}) complete={} stacked_gate={}",
-                path.display(),
-                w.is_complete(),
-                w.gate.as_ref().map(|g| g.stacked_slice).unwrap_or(false),
-            );
+            extract_and_report(&layout, &path, b, e);
         }
 
         if let Some(n) = layout.metadata.expert_count() {

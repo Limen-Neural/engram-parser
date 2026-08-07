@@ -109,6 +109,7 @@ so `rustup` / `cargo` in this directory use latest stable automatically.
 | `--check` prints diffs | Run `cargo fmt` (no `--check`) once, then commit |
 
 There is no `rustfmt.toml` in this repo; defaults are fine.
+
 ---
 
 ## 2. Gate table
