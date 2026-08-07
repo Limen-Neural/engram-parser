@@ -78,6 +78,16 @@ impl GgufMetadata {
         if let Some(s) = self.strings.get("general.quantization_type") {
             return s.clone();
         }
+        // If a signed value was stored, reject negatives rather than
+        // rendering them as huge unsigned labels.
+        if let Some(&s) = self.signed_numerics.get("general.file_type") {
+            return match s {
+                0 => "F32".into(),
+                1 => "F16".into(),
+                n if n >= 0 => format!("GGUF({n})"),
+                _ => "unknown".into(),
+            };
+        }
         match self.numerics.get("general.file_type").copied() {
             Some(0) => "F32".into(),
             Some(1) => "F16".into(),
@@ -524,5 +534,25 @@ mod tests {
         meta.numerics.insert("neg".into(), (-7i64) as u64);
         meta.signed_numerics.insert("neg".into(), -7);
         assert_eq!(meta.numeric("neg"), None);
+    }
+
+    #[test]
+    fn quantization_suppresses_negative_signed_file_type() {
+        let mut meta = GgufMetadata::default();
+
+        // A negative signed file_type must not render as an unsigned label.
+        meta.numerics
+            .insert("general.file_type".into(), (-7i64) as u64);
+        meta.signed_numerics.insert("general.file_type".into(), -7);
+        assert_eq!(meta.quantization(), "unknown");
+
+        // A positive signed file_type still resolves normally.
+        meta.signed_numerics.insert("general.file_type".into(), 15);
+        assert_eq!(meta.quantization(), "GGUF(15)");
+
+        // An unsigned file_type falls back to the unsigned map.
+        meta.signed_numerics.remove("general.file_type");
+        meta.numerics.insert("general.file_type".into(), 15);
+        assert_eq!(meta.quantization(), "GGUF(15)");
     }
 }
