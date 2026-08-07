@@ -75,26 +75,34 @@ pub fn build_gguf(kv: &[(&str, KvValue)], tensors: &[TensorSpec]) -> Vec<u8> {
         }
     }
 
-    // First pass: tensor directory with relative offsets.
-    let mut cum: usize = 0;
+    // Precompute aligned payload offsets and the payload bytes, mirroring real
+    // GGUF files where each tensor's data starts on an ALIGNMENT boundary.
+    let mut offsets = Vec::with_capacity(tensors.len());
+    let mut payloads = Vec::new();
     for spec in tensors {
+        while payloads.len() % ALIGNMENT as usize != 0 {
+            payloads.push(0);
+        }
+        offsets.push(payloads.len());
+        payloads.extend_from_slice(&spec.payload);
+    }
+
+    // First pass: tensor directory with relative offsets.
+    for (i, spec) in tensors.iter().enumerate() {
         push_string(&mut out, spec.name);
         push_u32(&mut out, spec.dims.len() as u32);
         for &d in &spec.dims {
             push_u64(&mut out, d as u64);
         }
         push_u32(&mut out, spec.ggml_type);
-        push_u64(&mut out, cum as u64);
-        cum += spec.payload.len();
+        push_u64(&mut out, offsets[i] as u64);
     }
 
-    // Align then write payloads.
+    // Align then append all tensor payloads.
     while out.len() % ALIGNMENT as usize != 0 {
         out.push(0);
     }
-    for spec in tensors {
-        out.extend_from_slice(&spec.payload);
-    }
+    out.extend_from_slice(&payloads);
     out
 }
 

@@ -397,12 +397,10 @@ impl DType {
         }
     }
 
-    /// `true` if this dtype has a modeled packed byte layout.
-    ///
-    /// This means the dtype is known to the parser (i.e. not `Other`), not
-    /// that `byte_len_for_elements` will succeed for every element count.
-    /// Blocked quantization types, for example, still require the element count
-    /// to be a multiple of their block size.
+    /// `true` if this crate models the wire layout of this dtype, i.e. every
+    /// variant except [`DType::Other`]. For blocked quants the element count
+    /// must also be block-aligned before [`Self::byte_len_for_elements`]
+    /// returns `Some`.
     pub fn has_known_byte_layout(self) -> bool {
         !matches!(self, Self::Other(_))
     }
