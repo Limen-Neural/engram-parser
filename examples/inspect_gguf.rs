@@ -155,6 +155,14 @@ fn resolve_path() -> Result<PathBuf, String> {
     // nosemgrep: argv is used only for CLI dispatch, never as a security trust anchor.
     let mut args = env::args_os().skip(1);
     if let Some(p) = args.next() {
+        if let Some(s) = p.to_str() {
+            if s == "--help" || s == "-h" || s == "--version" || s == "-V" {
+                return Err("help requested".into());
+            }
+            if s.starts_with('-') {
+                return Err(format!("unknown option {s}"));
+            }
+        }
         return Ok(PathBuf::from(p));
     }
     env::var("ENGRAM_GGUF")

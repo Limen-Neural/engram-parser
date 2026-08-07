@@ -25,6 +25,7 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process;
 use std::time::Instant;
 
 const ENV_GGUF: &str = "ENGRAM_GGUF";
@@ -276,21 +277,41 @@ fn real_gguf_moe_extract_when_present() {
 
 #[test]
 fn real_gguf_helpers_document_env() {
-    // Always runs in CI: documents the pilot contract without touching disk weights.
+    // Always runs in CI: documents the pilot contract and exercises the
+    // env-dependent helpers in a controlled, single-threaded test context.
     assert_eq!(ENV_GGUF, "ENGRAM_GGUF");
     assert_eq!(ENV_MODEL_DIR, "ENGRAM_MODEL_DIR");
     assert_eq!(ENV_MAX, "ENGRAM_GGUF_MAX");
     assert_eq!(ENV_EXPECT_MOE, "ENGRAM_EXPECT_MOE");
     assert_eq!(ENV_MOE_SAMPLES, "ENGRAM_MOE_SAMPLES");
-    // Defaults only when those vars are unset (local pilot env must not break CI-safe test).
-    if env::var_os(ENV_EXPECT_MOE).is_none() {
-        assert!(!expect_moe());
+
+    let prev_moe = env::var_os(ENV_MOE_SAMPLES);
+    let prev_gguf = env::var_os(ENV_GGUF);
+
+    // SAFETY: env mutation is isolated to this single-threaded test process.
+    unsafe {
+        env::set_var(ENV_MOE_SAMPLES, "7");
     }
-    if env::var_os(ENV_MOE_SAMPLES).is_none() {
-        assert_eq!(moe_sample_count(), 1);
+    assert_eq!(moe_sample_count(), 7);
+    unsafe {
+        env::set_var(ENV_MOE_SAMPLES, "0");
     }
-    // With no path env, pilot list is empty (CI safe).
-    if env::var_os(ENV_GGUF).is_none() && env::var_os(ENV_MODEL_DIR).is_none() {
-        assert!(pilot_gguf_paths().is_empty());
+    assert_eq!(moe_sample_count(), 1); // clamped to 1
+    match prev_moe {
+        Some(v) => unsafe { env::set_var(ENV_MOE_SAMPLES, v) },
+        None => unsafe { env::remove_var(ENV_MOE_SAMPLES) },
     }
+
+    // pilot_gguf_paths resolves a single ENGRAM_GGUF file.
+    let tmp = env::temp_dir().join(format!("engram_helpers_test_{}.gguf", process::id()));
+    fs::File::create(&tmp).expect("create temp file");
+    unsafe {
+        env::set_var(ENV_GGUF, &tmp);
+    }
+    assert_eq!(pilot_gguf_paths(), vec![tmp.clone()]);
+    match prev_gguf {
+        Some(v) => unsafe { env::set_var(ENV_GGUF, v) },
+        None => unsafe { env::remove_var(ENV_GGUF) },
+    }
+    let _ = fs::remove_file(&tmp);
 }
