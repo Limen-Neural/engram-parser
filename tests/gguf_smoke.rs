@@ -25,13 +25,17 @@ fn parses_magic_and_metadata() {
     }];
     let bytes = build_gguf(&kv, &tensors);
     let layout = parse_bytes(bytes, "mem://test".into()).expect("parse");
-    assert_eq!(layout.metadata.architecture(), "olmoe");
-    assert_eq!(layout.metadata.numeric("olmoe.expert_count"), Some(4));
-    assert_eq!(layout.alignment, ALIGNMENT as usize);
-    assert!(layout.tensors.contains_key("token_embd.weight"));
     let t = &layout.tensors["token_embd.weight"];
-    assert_eq!(t.dtype, DType::F32);
-    assert_eq!(t.dims, vec![4, 2]);
+    assert_all(&[
+        (layout.metadata.architecture() == "olmoe", "architecture"),
+        (
+            layout.metadata.numeric("olmoe.expert_count") == Some(4),
+            "expert_count",
+        ),
+        (layout.alignment == ALIGNMENT as usize, "alignment"),
+        (t.dtype == DType::F32, "token dtype"),
+        (t.dims == vec![4, 2], "token dims"),
+    ]);
 }
 
 #[test]
@@ -90,24 +94,44 @@ fn extracts_stacked_expert_slices() {
 
     for e in 0..n_experts {
         let out = extract_expert(&layout, 0, e).expect("extract");
-        assert_eq!(out.block, 0);
-        assert_eq!(out.expert, e);
-        let gate = out.gate.as_ref().expect("gate present");
-        assert!(gate.stacked_slice);
-        assert_eq!(gate.dims, vec![inner, outer]);
-        assert_eq!(gate.bytes.len(), per_expert * 4);
-        let first = f32::from_le_bytes(gate.bytes[0..4].try_into().unwrap());
-        assert!((first - ((e as f32) + 0.1)).abs() < 1e-6);
-
-        let up = out.up.as_ref().expect("up present");
-        let first_up = f32::from_le_bytes(up.bytes[0..4].try_into().unwrap());
-        assert!((first_up - ((e as f32) + 0.2)).abs() < 1e-6);
-
-        let down = out.down.as_ref().expect("down present");
-        let first_down = f32::from_le_bytes(down.bytes[0..4].try_into().unwrap());
-        assert!((first_down - ((e as f32) + 0.3)).abs() < 1e-6);
-
-        assert!(out.is_complete());
+        let gate_first = out
+            .gate
+            .as_ref()
+            .map(|g| f32::from_le_bytes(g.bytes[0..4].try_into().unwrap()));
+        let up_first = out
+            .up
+            .as_ref()
+            .map(|u| f32::from_le_bytes(u.bytes[0..4].try_into().unwrap()));
+        let down_first = out
+            .down
+            .as_ref()
+            .map(|d| f32::from_le_bytes(d.bytes[0..4].try_into().unwrap()));
+        assert_all(&[
+            (out.block == 0 && out.expert == e, "expert ids"),
+            (out.is_complete(), "complete"),
+            (
+                out.gate.as_ref().is_some_and(|g| g.stacked_slice),
+                "gate stacked",
+            ),
+            (
+                out.gate.as_ref().is_some_and(|g| {
+                    g.dims == vec![inner, outer] && g.bytes.len() == per_expert * 4
+                }),
+                "gate shape",
+            ),
+            (
+                gate_first.is_some_and(|f| (f - ((e as f32) + 0.1)).abs() < 1e-6),
+                "gate first",
+            ),
+            (
+                up_first.is_some_and(|f| (f - ((e as f32) + 0.2)).abs() < 1e-6),
+                "up first",
+            ),
+            (
+                down_first.is_some_and(|f| (f - ((e as f32) + 0.3)).abs() < 1e-6),
+                "down first",
+            ),
+        ]);
     }
 }
 
@@ -169,16 +193,37 @@ fn extracts_per_expert_tensors() {
     assert_eq!(pairs, vec![(0, 0), (0, 1)]);
 
     let e0 = extract_expert(&layout, 0, 0).unwrap();
-    let gate0 = e0.gate.as_ref().unwrap();
-    assert!(!gate0.stacked_slice);
-    assert_eq!(gate0.source_name, "blk.0.ffn_gate.0.weight");
-    let first = f32::from_le_bytes(gate0.bytes[0..4].try_into().unwrap());
-    assert!((first - 10.0).abs() < 1e-6);
+    let gate0_first = e0
+        .gate
+        .as_ref()
+        .map(|g| f32::from_le_bytes(g.bytes[0..4].try_into().unwrap()));
 
     let e1 = extract_expert(&layout, 0, 1).unwrap();
-    let up1 = e1.up.as_ref().unwrap();
-    let first = f32::from_le_bytes(up1.bytes[0..4].try_into().unwrap());
-    assert!((first - 21.0).abs() < 1e-6);
+    let up1_first = e1
+        .up
+        .as_ref()
+        .map(|u| f32::from_le_bytes(u.bytes[0..4].try_into().unwrap()));
+
+    assert_all(&[
+        (
+            e0.gate.as_ref().is_some_and(|g| !g.stacked_slice),
+            "e0 gate not stacked",
+        ),
+        (
+            e0.gate
+                .as_ref()
+                .is_some_and(|g| g.source_name == "blk.0.ffn_gate.0.weight"),
+            "e0 gate source",
+        ),
+        (
+            gate0_first.is_some_and(|f| (f - 10.0).abs() < 1e-6),
+            "e0 gate first",
+        ),
+        (
+            up1_first.is_some_and(|f| (f - 21.0).abs() < 1e-6),
+            "e1 up first",
+        ),
+    ]);
 }
 
 #[test]
@@ -229,14 +274,16 @@ fn metadata_layout() -> engram_parser::GgufLayout {
 #[test]
 fn metadata_helpers_basic() {
     let layout = metadata_layout();
-    assert_eq!(layout.metadata.architecture(), "qwen2moe");
-    assert_eq!(layout.metadata.quantization(), "Q4_K_M");
-    assert_eq!(
-        layout.metadata.string("general.name"),
-        Some("Qwen2-MoE-A2.7B")
-    );
     let rope_freq = layout.metadata.float32("qwen2moe.rope_freq_base").unwrap();
-    assert!((rope_freq - 10_000.0).abs() < 1e-6);
+    assert_all(&[
+        (layout.metadata.architecture() == "qwen2moe", "architecture"),
+        (layout.metadata.quantization() == "Q4_K_M", "quantization"),
+        (
+            layout.metadata.string("general.name") == Some("Qwen2-MoE-A2.7B"),
+            "name",
+        ),
+        ((rope_freq - 10_000.0).abs() < 1e-6, "rope_freq_base"),
+    ]);
 }
 
 #[test]
@@ -279,10 +326,12 @@ fn metadata_helpers_with_unknown_architecture() {
     let kv = [("some.block_count", KvValue::U32(10))];
     let layout = parse_bytes(build_gguf(&kv, &[]), "mem://no-arch".into()).expect("parse");
 
-    assert_eq!(layout.metadata.architecture(), "unknown");
-    assert_eq!(layout.metadata.quantization(), "unknown");
-    assert_eq!(layout.metadata.block_count(), None);
-    assert_eq!(layout.metadata.expert_count(), None);
+    assert_all(&[
+        (layout.metadata.architecture() == "unknown", "architecture"),
+        (layout.metadata.quantization() == "unknown", "quantization"),
+        (layout.metadata.block_count().is_none(), "block_count"),
+        (layout.metadata.expert_count().is_none(), "expert_count"),
+    ]);
 }
 
 #[test]
@@ -315,10 +364,12 @@ fn dtype_f32_roundtrip() {
     use engram_parser::DType;
 
     let dt = DType::from_ggml_type(0);
-    assert_eq!(dt, DType::F32);
-    assert_eq!(dt.ggml_type(), 0);
-    assert_eq!(dt.byte_len_for_elements(100), Some(400));
-    assert!(dt.has_known_byte_layout());
+    assert_all(&[
+        (dt == DType::F32, "variant"),
+        (dt.ggml_type() == 0, "ggml_type"),
+        (dt.byte_len_for_elements(100) == Some(400), "byte_len"),
+        (dt.has_known_byte_layout(), "layout"),
+    ]);
 }
 
 #[test]
@@ -326,12 +377,16 @@ fn dtype_q4k_layout() {
     use engram_parser::DType;
 
     let dt = DType::from_ggml_type(12);
-    assert_eq!(dt, DType::Q4_K);
-    assert_eq!(dt.ggml_type(), 12);
-    // Q4_K: 256 elements per block, 144 bytes per block.
-    assert_eq!(dt.byte_len_for_elements(256), Some(144));
-    assert_eq!(dt.byte_len_for_elements(512), Some(288));
-    assert_eq!(dt.byte_len_for_elements(100), None); // not aligned
+    assert_all(&[
+        (dt == DType::Q4_K, "variant"),
+        (dt.ggml_type() == 12, "ggml_type"),
+        (dt.byte_len_for_elements(256) == Some(144), "byte_len_256"),
+        (dt.byte_len_for_elements(512) == Some(288), "byte_len_512"),
+        (
+            dt.byte_len_for_elements(100).is_none(),
+            "byte_len_misaligned",
+        ),
+    ]);
 }
 
 #[test]
@@ -339,11 +394,13 @@ fn dtype_wire_31_is_other() {
     use engram_parser::DType;
 
     let dt = DType::from_ggml_type(31);
-    assert_eq!(dt, DType::Other(31));
-    assert_eq!(dt.ggml_type(), 31);
-    assert_eq!(dt.byte_len_for_elements(256), None);
-    assert!(!dt.has_known_byte_layout());
-    assert_eq!(dt.label(), "Q4_0_4_4");
+    assert_all(&[
+        (dt == DType::Other(31), "variant"),
+        (dt.ggml_type() == 31, "ggml_type"),
+        (dt.byte_len_for_elements(256).is_none(), "byte_len"),
+        (!dt.has_known_byte_layout(), "layout"),
+        (dt.label() == "Q4_0_4_4", "label"),
+    ]);
 }
 
 #[test]
@@ -351,10 +408,12 @@ fn dtype_unknown_is_other() {
     use engram_parser::DType;
 
     let dt = DType::from_ggml_type(999);
-    assert_eq!(dt, DType::Other(999));
-    assert_eq!(dt.ggml_type(), 999);
-    assert_eq!(dt.byte_len_for_elements(100), None);
-    assert!(!dt.has_known_byte_layout());
+    assert_all(&[
+        (dt == DType::Other(999), "variant"),
+        (dt.ggml_type() == 999, "ggml_type"),
+        (dt.byte_len_for_elements(100).is_none(), "byte_len"),
+        (!dt.has_known_byte_layout(), "layout"),
+    ]);
 }
 
 #[test]
@@ -601,15 +660,20 @@ fn extracts_stacked_q8_0_expert_slices() {
 
     for e in 0..n_experts {
         let out = extract_expert(&layout, 0, e).expect("extract");
-        let gate = out.gate.as_ref().expect("gate");
-        assert!(gate.stacked_slice);
-        assert_eq!(gate.bytes.len(), per_expert_bytes);
-        assert!(
-            gate.bytes.iter().all(|&b| b == e as u8),
-            "expert {e} gate bytes should be filled with {e}"
-        );
-        assert_eq!(gate.dtype, DType::Q8_0);
-        assert!(out.is_complete());
+        let gate = out.gate.as_ref();
+        assert_all(&[
+            (gate.is_some_and(|g| g.stacked_slice), "gate stacked"),
+            (
+                gate.is_some_and(|g| g.bytes.len() == per_expert_bytes),
+                "gate bytes len",
+            ),
+            (
+                gate.is_some_and(|g| g.bytes.iter().all(|&b| b == e as u8)),
+                "gate bytes",
+            ),
+            (gate.is_some_and(|g| g.dtype == DType::Q8_0), "gate dtype"),
+            (out.is_complete(), "complete"),
+        ]);
     }
 }
 
@@ -633,14 +697,22 @@ fn extracts_stacked_q4_k_expert_slices() {
     let kv = [("general.architecture", KvValue::Str("olmoe"))];
     let layout = parse_bytes(build_gguf(&kv, &tensors), "mem://q4k-stacked".into()).expect("parse");
     let e0 = extract_expert(&layout, 0, 0).unwrap();
-    let gate0 = e0.gate.as_ref().unwrap();
-    assert_eq!(gate0.bytes.len(), 144);
-    assert!(gate0.bytes.iter().all(|&b| b == 0x10));
-    assert_eq!(gate0.dtype, DType::Q4_K);
+    let gate0 = e0.gate.as_ref();
+    assert_all(&[
+        (gate0.is_some_and(|g| g.bytes.len() == 144), "e0 bytes len"),
+        (
+            gate0.is_some_and(|g| g.bytes.iter().all(|&b| b == 0x10)),
+            "e0 bytes",
+        ),
+        (gate0.is_some_and(|g| g.dtype == DType::Q4_K), "e0 dtype"),
+    ]);
 
     let e1 = extract_expert(&layout, 0, 1).unwrap();
-    let gate1 = e1.gate.as_ref().unwrap();
-    assert!(gate1.bytes.iter().all(|&b| b == 0x11));
+    let gate1 = e1.gate.as_ref();
+    assert!(
+        gate1.is_some_and(|g| g.bytes.iter().all(|&b| b == 0x11)),
+        "e1 bytes"
+    );
 }
 
 #[test]

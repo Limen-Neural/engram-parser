@@ -612,8 +612,15 @@ mod tests {
     #[test]
     fn unknown_code_becomes_other() {
         let dt = DType::from_ggml_type(9999);
-        assert_eq!(dt, DType::Other(9999));
-        assert_eq!(dt.ggml_type(), 9999);
+        let checks = [
+            (dt == DType::Other(9999), "variant"),
+            (dt.ggml_type() == 9999, "ggml_type"),
+            (dt.byte_len_for_elements(100).is_none(), "byte_len"),
+            (!dt.has_known_byte_layout(), "layout"),
+        ];
+        for (ok, label) in checks {
+            assert!(ok, "unknown code 9999: {label}");
+        }
     }
 
     #[test]
@@ -697,71 +704,81 @@ mod tests {
 
     #[test]
     fn byte_len_for_simple_types() {
-        assert_eq!(DType::F32.byte_len_for_elements(100), Some(400));
-        assert_eq!(DType::F16.byte_len_for_elements(100), Some(200));
-        assert_eq!(DType::BF16.byte_len_for_elements(100), Some(200));
-        assert_eq!(DType::F64.byte_len_for_elements(10), Some(80));
-        assert_eq!(DType::I8.byte_len_for_elements(10), Some(10));
-        assert_eq!(DType::I16.byte_len_for_elements(10), Some(20));
-        assert_eq!(DType::I32.byte_len_for_elements(10), Some(40));
-        assert_eq!(DType::I64.byte_len_for_elements(10), Some(80));
+        let cases = [
+            (DType::F32, 100, Some(400)),
+            (DType::F16, 100, Some(200)),
+            (DType::BF16, 100, Some(200)),
+            (DType::F64, 10, Some(80)),
+            (DType::I8, 10, Some(10)),
+            (DType::I16, 10, Some(20)),
+            (DType::I32, 10, Some(40)),
+            (DType::I64, 10, Some(80)),
+        ];
+        for (dt, n, expected) in cases {
+            assert_eq!(dt.byte_len_for_elements(n), expected, "{dt:?} x {n}");
+        }
     }
 
     #[test]
     fn byte_len_for_blocked_quants() {
-        // Q4_0: block_size=32, 18 bytes per block
-        assert_eq!(DType::Q4_0.byte_len_for_elements(32), Some(18));
-        assert_eq!(DType::Q4_0.byte_len_for_elements(64), Some(36));
-        assert_eq!(DType::Q4_0.byte_len_for_elements(33), None);
-
-        // Q8_0: block_size=32, 34 bytes per block
-        assert_eq!(DType::Q8_0.byte_len_for_elements(32), Some(34));
-
-        // Q4_K: block_size=256, 144 bytes per block
-        assert_eq!(DType::Q4_K.byte_len_for_elements(256), Some(144));
-        assert_eq!(DType::Q4_K.byte_len_for_elements(128), None);
-
-        // Q6_K: block_size=256, 210 bytes per block
-        assert_eq!(DType::Q6_K.byte_len_for_elements(256), Some(210));
-
-        // Q8_K: block_size=256, 292 bytes per block
-        assert_eq!(DType::Q8_K.byte_len_for_elements(256), Some(292));
+        let cases = [
+            // Q4_0: block_size=32, 18 bytes per block
+            (DType::Q4_0, 32, Some(18)),
+            (DType::Q4_0, 64, Some(36)),
+            (DType::Q4_0, 33, None),
+            // Q8_0: block_size=32, 34 bytes per block
+            (DType::Q8_0, 32, Some(34)),
+            // Q4_K: block_size=256, 144 bytes per block
+            (DType::Q4_K, 256, Some(144)),
+            (DType::Q4_K, 128, None),
+            // Q6_K: block_size=256, 210 bytes per block
+            (DType::Q6_K, 256, Some(210)),
+            // Q8_K: block_size=256, 292 bytes per block
+            (DType::Q8_K, 256, Some(292)),
+        ];
+        for (dt, n, expected) in cases {
+            assert_eq!(dt.byte_len_for_elements(n), expected, "{dt:?} x {n}");
+        }
     }
 
     #[test]
     fn byte_len_for_iq_quants() {
         // Wire layouts from llama.cpp ggml-common.h (QK_K=256).
-        assert_eq!(DType::IQ2_XXS.byte_len_for_elements(256), Some(66));
-        assert_eq!(DType::IQ2_XS.byte_len_for_elements(256), Some(74));
-        assert_eq!(DType::IQ2_S.byte_len_for_elements(256), Some(82));
-        assert_eq!(DType::IQ3_XXS.byte_len_for_elements(256), Some(98));
-        assert_eq!(DType::IQ3_S.byte_len_for_elements(256), Some(110));
-        assert_eq!(DType::IQ3_S.byte_len_for_elements(512), Some(220));
-        assert_eq!(DType::IQ3_S.byte_len_for_elements(100), None);
-        assert_eq!(DType::IQ1_S.byte_len_for_elements(256), Some(50));
-        assert_eq!(DType::IQ1_M.byte_len_for_elements(256), Some(56));
-        assert_eq!(DType::IQ4_NL.byte_len_for_elements(32), Some(18));
-        assert_eq!(DType::IQ4_NL.byte_len_for_elements(64), Some(36));
-        assert_eq!(DType::IQ4_NL.byte_len_for_elements(33), None);
-        assert_eq!(DType::IQ4_XS.byte_len_for_elements(256), Some(136));
-        assert_eq!(DType::from_ggml_type(16), DType::IQ2_XXS);
-        assert_eq!(DType::from_ggml_type(29), DType::IQ1_M);
-        // Wire 31 (Q4_0_4_4) is Other with no known layout
-        assert_eq!(DType::from_ggml_type(31), DType::Other(31));
-        assert_eq!(DType::Other(31).byte_len_for_elements(256), None);
-        assert_eq!(DType::Other(99).byte_len_for_elements(100), None);
+        let cases = [
+            (DType::IQ2_XXS, 256, Some(66)),
+            (DType::IQ2_XS, 256, Some(74)),
+            (DType::IQ2_S, 256, Some(82)),
+            (DType::IQ3_XXS, 256, Some(98)),
+            (DType::IQ3_S, 256, Some(110)),
+            (DType::IQ3_S, 512, Some(220)),
+            (DType::IQ3_S, 100, None),
+            (DType::IQ1_S, 256, Some(50)),
+            (DType::IQ1_M, 256, Some(56)),
+            (DType::IQ4_NL, 32, Some(18)),
+            (DType::IQ4_NL, 64, Some(36)),
+            (DType::IQ4_NL, 33, None),
+            (DType::IQ4_XS, 256, Some(136)),
+        ];
+        for (dt, n, expected) in cases {
+            assert_eq!(dt.byte_len_for_elements(n), expected, "{dt:?} x {n}");
+        }
     }
 
     #[test]
     fn has_known_byte_layout_check() {
-        assert!(DType::F32.has_known_byte_layout());
-        assert!(DType::Q8_0.has_known_byte_layout());
-        assert!(DType::Q4_K.has_known_byte_layout());
-        assert!(DType::IQ3_S.has_known_byte_layout());
-        assert!(DType::IQ2_XXS.has_known_byte_layout());
-        assert!(DType::IQ4_NL.has_known_byte_layout());
-        assert!(!DType::Other(31).has_known_byte_layout());
-        assert!(!DType::Other(99).has_known_byte_layout());
+        let cases = [
+            (DType::F32, true),
+            (DType::Q8_0, true),
+            (DType::Q4_K, true),
+            (DType::IQ3_S, true),
+            (DType::IQ2_XXS, true),
+            (DType::IQ4_NL, true),
+            (DType::Other(31), false),
+            (DType::Other(99), false),
+        ];
+        for (dt, expected) in cases {
+            assert_eq!(dt.has_known_byte_layout(), expected, "{dt:?}");
+        }
     }
 
     #[test]
@@ -805,26 +822,32 @@ mod tests {
 
     #[test]
     fn wire_type_31_is_q4_0_4_4_not_iq3_m() {
-        assert_eq!(GGML_TYPE_Q4_0_4_4, 31);
-        assert_eq!(ggml_type_label(31), "Q4_0_4_4");
-        assert_ne!(ggml_type_label(31), "IQ3_M");
         let dt = DType::from_ggml_type(31);
-        assert_eq!(dt, DType::Other(31));
-        assert_eq!(dt.byte_len_for_elements(256), None);
-        assert!(!dt.has_known_byte_layout());
+        let label = ggml_type_label(31);
+        assert!(
+            GGML_TYPE_Q4_0_4_4 == 31
+                && label == "Q4_0_4_4"
+                && label != "IQ3_M"
+                && dt == DType::Other(31)
+                && dt.byte_len_for_elements(256).is_none()
+                && !dt.has_known_byte_layout(),
+            "wire 31 semantics: label={label}, dt={dt:?}"
+        );
     }
 
     #[test]
     fn f16_to_f32_known_values() {
-        // 0.0
-        assert_eq!(f16_bits_to_f32(0x0000), 0.0);
-        // 1.0
-        assert_eq!(f16_bits_to_f32(0x3C00), 1.0);
-        // -1.0
-        assert_eq!(f16_bits_to_f32(0xBC00), -1.0);
-        // +inf
-        assert!(f16_bits_to_f32(0x7C00).is_infinite());
-        // -inf
-        assert!(f16_bits_to_f32(0xFC00).is_infinite());
+        let finite = [(0x0000, 0.0), (0x3C00, 1.0), (0xBC00, -1.0)];
+        for (bits, expected) in finite {
+            assert_eq!(f16_bits_to_f32(bits), expected, "bits {bits:#06X}");
+        }
+
+        for (bits, positive) in [(0x7C00, true), (0xFC00, false)] {
+            let v = f16_bits_to_f32(bits);
+            assert!(
+                v.is_infinite() && v.is_sign_positive() == positive,
+                "bits {bits:#06X}: {v}"
+            );
+        }
     }
 }

@@ -346,22 +346,39 @@ impl Drop for TempDir {
 fn real_gguf_helpers_document_env() {
     // Always runs in CI: documents the pilot contract and exercises the
     // env-dependent helpers without mutating the process environment.
-    assert_eq!(ENV_GGUF, "ENGRAM_GGUF");
-    assert_eq!(ENV_MODEL_DIR, "ENGRAM_MODEL_DIR");
-    assert_eq!(ENV_MAX, "ENGRAM_GGUF_MAX");
-    assert_eq!(ENV_EXPECT_MOE, "ENGRAM_EXPECT_MOE");
-    assert_eq!(ENV_MOE_SAMPLES, "ENGRAM_MOE_SAMPLES");
+    let env_names = [
+        (ENV_GGUF, "ENGRAM_GGUF"),
+        (ENV_MODEL_DIR, "ENGRAM_MODEL_DIR"),
+        (ENV_MAX, "ENGRAM_GGUF_MAX"),
+        (ENV_EXPECT_MOE, "ENGRAM_EXPECT_MOE"),
+        (ENV_MOE_SAMPLES, "ENGRAM_MOE_SAMPLES"),
+    ];
+    for (actual, expected) in env_names {
+        assert_eq!(actual, expected);
+    }
 
-    // expect_moe parsing
-    assert!(!expect_moe_from(None));
-    assert!(expect_moe_from(Some("1")));
-    assert!(expect_moe_from(Some("YES")));
-    assert!(!expect_moe_from(Some("no")));
+    let expect_cases = [
+        (None, false),
+        (Some("1"), true),
+        (Some("YES"), true),
+        (Some("no"), false),
+    ];
+    for (input, expected) in expect_cases {
+        assert_eq!(
+            expect_moe_from(input),
+            expected,
+            "expect_moe_from({input:?})"
+        );
+    }
 
-    // moe_sample_count parsing and clamping
-    assert_eq!(moe_sample_count_from(Some("7")), 7);
-    assert_eq!(moe_sample_count_from(Some("0")), 1);
-    assert_eq!(moe_sample_count_from(None), 1);
+    let sample_cases = [(Some("7"), 7usize), (Some("0"), 1), (None, 1)];
+    for (input, expected) in sample_cases {
+        assert_eq!(
+            moe_sample_count_from(input),
+            expected,
+            "moe_sample_count_from({input:?})"
+        );
+    }
 
     // pilot_gguf_paths resolves a single file.
     let tmp = unique_tmp("engram_helpers_file");

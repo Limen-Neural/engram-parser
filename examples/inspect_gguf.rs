@@ -126,30 +126,24 @@ fn print_moe_summary(layout: &GgufLayout) {
                 "extract ({b},{e}): complete={} extract_ms={extract_ms:.2}",
                 w.is_complete()
             );
-            if let Some(g) = w.gate.as_ref() {
-                println!(
-                    "  gate: dims={:?} bytes={} dtype={:?} stacked={}",
-                    g.dims,
-                    g.bytes.len(),
-                    g.dtype,
-                    g.stacked_slice
-                );
-            }
-            if let Some(u) = w.up.as_ref() {
-                println!(
-                    "  up:   dims={:?} bytes={} dtype={:?}",
-                    u.dims,
-                    u.bytes.len(),
-                    u.dtype
-                );
-            }
-            if let Some(d) = w.down.as_ref() {
-                println!(
-                    "  down: dims={:?} bytes={} dtype={:?}",
-                    d.dims,
-                    d.bytes.len(),
-                    d.dtype
-                );
+            let roles = [
+                ("gate", &w.gate, true),
+                ("up", &w.up, false),
+                ("down", &w.down, false),
+            ];
+            for (name, opt, show_stacked) in roles {
+                if let Some(t) = opt.as_ref() {
+                    let mut line = format!(
+                        "  {name}: dims={:?} bytes={} dtype={:?}",
+                        t.dims,
+                        t.bytes.len(),
+                        t.dtype
+                    );
+                    if show_stacked {
+                        line.push_str(&format!(" stacked={}", t.stacked_slice));
+                    }
+                    println!("{line}");
+                }
             }
         }
         Err(err) => println!("extract ({b},{e}) failed: {err}"),
