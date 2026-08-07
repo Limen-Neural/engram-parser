@@ -21,12 +21,27 @@ use std::time::Instant;
 
 use engram_parser::{GgufLayout, extract_expert, ggml_type_label, list_experts, load_gguf};
 
+enum Resolved {
+    Path(PathBuf),
+    Help,
+    Version,
+}
+
 fn main() -> ExitCode {
     let path = match resolve_path() {
-        Ok(p) => p,
+        Ok(Resolved::Path(p)) => p,
+        Ok(Resolved::Help) => {
+            eprintln!("usage: cargo run --example inspect_gguf -- [--] <model.gguf>");
+            eprintln!("   or: ENGRAM_GGUF=<model.gguf> cargo run --example inspect_gguf");
+            return ExitCode::SUCCESS;
+        }
+        Ok(Resolved::Version) => {
+            eprintln!("engram-parser {}", env!("CARGO_PKG_VERSION"));
+            return ExitCode::SUCCESS;
+        }
         Err(msg) => {
             eprintln!("{msg}");
-            eprintln!("usage: cargo run --example inspect_gguf -- <model.gguf>");
+            eprintln!("usage: cargo run --example inspect_gguf -- [--] <model.gguf>");
             eprintln!("   or: ENGRAM_GGUF=<model.gguf> cargo run --example inspect_gguf");
             return ExitCode::from(2);
         }
@@ -151,21 +166,34 @@ fn print_tensor_sample(layout: &GgufLayout) {
     }
 }
 
-fn resolve_path() -> Result<PathBuf, String> {
+fn resolve_path() -> Result<Resolved, String> {
     // nosemgrep: argv is used only for CLI dispatch, never as a security trust anchor.
-    let mut args = env::args_os().skip(1);
-    if let Some(p) = args.next() {
+    let args = env::args_os().skip(1);
+    let mut seen_dash_dash = false;
+    for p in args {
         if let Some(s) = p.to_str() {
-            if s == "--help" || s == "-h" || s == "--version" || s == "-V" {
-                return Err("help requested".into());
+            if !seen_dash_dash {
+                if s == "--" {
+                    seen_dash_dash = true;
+                    continue;
+                }
+                if s == "--help" || s == "-h" {
+                    return Ok(Resolved::Help);
+                }
+                if s == "--version" || s == "-V" {
+                    return Ok(Resolved::Version);
+                }
+                if s.starts_with('-') {
+                    return Err(format!("unknown option {s}"));
+                }
             }
-            if s.starts_with('-') {
-                return Err(format!("unknown option {s}"));
-            }
+            return Ok(Resolved::Path(PathBuf::from(p)));
         }
-        return Ok(PathBuf::from(p));
+        // Non-UTF-8 path: treat as positional after a `--` or as the first argument.
+        return Ok(Resolved::Path(PathBuf::from(p)));
     }
     env::var("ENGRAM_GGUF")
         .map(PathBuf::from)
+        .map(Resolved::Path)
         .map_err(|_| "missing model path (arg or ENGRAM_GGUF)".into())
 }
