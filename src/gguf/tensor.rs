@@ -152,7 +152,7 @@ pub fn ggml_type_label(ggml_type: u32) -> &'static str {
 /// arithmetic — raw bytes are returned as-is. `BF16` layout parsing is
 /// supported even though no BF16→F32 conversion is provided.
 ///
-/// Types not explicitly enumerated are captured by [`DType::Other(u32)`]
+/// Types not explicitly enumerated are captured by [`DType::Other`]
 /// which preserves the raw code for callers to dispatch on.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -397,9 +397,12 @@ impl DType {
         }
     }
 
-    /// `true` if this dtype's byte layout is a fixed multiple of the
-    /// element count (F32, F16, BF16, F64, I8, I16, I32, I64, and
-    /// the simple blocked quants when aligned).
+    /// `true` if this dtype has a modeled packed byte layout.
+    ///
+    /// This means the dtype is known to the parser (i.e. not `Other`), not
+    /// that `byte_len_for_elements` will succeed for every element count.
+    /// Blocked quantization types, for example, still require the element count
+    /// to be a multiple of their block size.
     pub fn has_known_byte_layout(self) -> bool {
         !matches!(self, Self::Other(_))
     }
