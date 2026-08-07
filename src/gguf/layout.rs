@@ -48,8 +48,16 @@ impl GgufMetadata {
     }
 
     /// Convenience: numeric KV coerced to `usize`.
+    ///
+    /// Returns `None` when the stored value is larger than `i64::MAX`,
+    /// which for signed value types indicates a bit-preserved negative
+    /// number that should not be interpreted as a non-negative quantity.
     pub fn numeric(&self, key: &str) -> Option<usize> {
-        self.numerics.get(key).map(|&v| v as usize)
+        let &v = self.numerics.get(key)?;
+        if v > i64::MAX as u64 {
+            return None;
+        }
+        usize::try_from(v).ok()
     }
 
     /// Convenience: quantization label.
@@ -66,8 +74,8 @@ impl GgufMetadata {
         match self.numerics.get("general.file_type").copied() {
             Some(0) => "F32".into(),
             Some(1) => "F16".into(),
-            Some(n) => format!("GGUF({n})"),
-            None => "unknown".into(),
+            Some(n) if n <= i64::MAX as u64 => format!("GGUF({n})"),
+            _ => "unknown".into(),
         }
     }
 
@@ -112,12 +120,7 @@ impl GgufMetadata {
     /// Convenience: attention head count from
     /// `{architecture}.attention.head_count`.
     pub fn head_count(&self) -> Option<usize> {
-        let arch = self.architecture();
-        if arch == "unknown" {
-            return None;
-        }
-        let full_key = format!("{arch}.attention.head_count");
-        self.numeric(&full_key)
+        self.arch_numeric("attention.head_count")
     }
 
     /// Generic string metadata lookup.
@@ -219,7 +222,7 @@ pub(crate) fn parse_layout(
 ) -> Result<(GgufMetadata, HashMap<String, Tensor>, usize, usize)> {
     let mut cursor = GgufCursor::new(bytes, path);
     let header = read_layout_header(&mut cursor, path)?;
-    let (alignment, metadata) = read_metadata_section(&mut cursor, header.kv_count)?;
+    let (alignment, metadata) = read_metadata_section(&mut cursor, path, header.kv_count)?;
     let mut tensors = read_tensor_directory(&mut cursor, path, header.tensor_count)?;
     let tensor_data_offset = finalize_tensor_offsets(&mut tensors, cursor.offset(), alignment);
     Ok((metadata, tensors, alignment, tensor_data_offset))
@@ -267,6 +270,7 @@ fn bounded_count(raw: u64, limit: u64, label: &str, path: &str) -> Result<usize>
 
 fn read_metadata_section(
     cursor: &mut GgufCursor<'_>,
+    path: &str,
     kv_count: usize,
 ) -> Result<(usize, GgufMetadata)> {
     let mut alignment: usize = 32;
@@ -276,8 +280,15 @@ fn read_metadata_section(
         let key = cursor.read_string()?;
         let value_type = cursor.read_u32()?;
         if key == "general.alignment" {
-            // Layout-critical: reject signed negatives (do not wrap to huge usize).
-            alignment = cursor.read_nonneg_layout_usize(value_type)?.max(1);
+            // Layout-critical: reject signed negatives (do not wrap to huge usize)
+            // and require a positive power of two.
+            alignment = cursor.read_nonneg_layout_usize(value_type)?;
+            if alignment == 0 || !alignment.is_power_of_two() {
+                return Err(invalid_layout(
+                    path,
+                    format!("general.alignment must be a positive power of 2, got {alignment}"),
+                ));
+            }
         } else {
             capture_kv(cursor, &mut metadata, key, value_type)?;
         }
