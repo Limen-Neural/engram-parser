@@ -51,7 +51,7 @@ pub const GGUF_VALUE_TYPE_INT64: u32 = 11;
 /// GGUF value type: 64-bit IEEE 754 float.
 pub const GGUF_VALUE_TYPE_FLOAT64: u32 = 12;
 
-fn is_signed_layout_type(value_type: u32) -> bool {
+pub(crate) fn is_signed_layout_type(value_type: u32) -> bool {
     matches!(
         value_type,
         GGUF_VALUE_TYPE_INT8
@@ -259,20 +259,14 @@ impl<'a> GgufCursor<'a> {
 
     /// Skip an arbitrary GGUF value without materialising it.
     pub(crate) fn skip_value(&mut self, value_type: u32) -> Result<()> {
-        self.skip_value_with_depth(value_type, 0)
+        if value_type == GGUF_VALUE_TYPE_ARRAY {
+            self.skip_array_value()
+        } else {
+            self.skip_scalar_value(value_type)
+        }
     }
 
-    /// Maximum nesting depth for arrays to avoid stack exhaustion from
-    /// malicious or malformed GGUF metadata.
-    const MAX_SKIP_DEPTH: u32 = 16;
-
-    fn skip_value_with_depth(&mut self, value_type: u32, depth: u32) -> Result<()> {
-        if depth > Self::MAX_SKIP_DEPTH {
-            return Err(self.unsupported(format!(
-                "GGUF array nesting exceeds depth limit {}",
-                Self::MAX_SKIP_DEPTH
-            )));
-        }
+    fn skip_scalar_value(&mut self, value_type: u32) -> Result<()> {
         match value_type {
             GGUF_VALUE_TYPE_UINT8 | GGUF_VALUE_TYPE_INT8 | GGUF_VALUE_TYPE_BOOL => {
                 self.read_exact(1)?;
@@ -289,7 +283,6 @@ impl<'a> GgufCursor<'a> {
             GGUF_VALUE_TYPE_STRING => {
                 let _ = self.read_string()?;
             }
-            GGUF_VALUE_TYPE_ARRAY => self.skip_array_value_with_depth(depth + 1)?,
             other => {
                 return Err(self.unsupported(format!("unsupported GGUF value type {other}")));
             }
@@ -297,7 +290,10 @@ impl<'a> GgufCursor<'a> {
         Ok(())
     }
 
-    fn skip_array_value_with_depth(&mut self, depth: u32) -> Result<()> {
+    /// Skip a GGUF array value using an explicit stack instead of recursion,
+    /// so deep-but-valid metadata arrays are not rejected by an arbitrary
+    /// depth limit. Total work is still bounded by the remaining byte range.
+    fn skip_array_value(&mut self) -> Result<()> {
         let nested = self.read_u32()?;
         let len = self.read_u64()?;
 
@@ -309,8 +305,35 @@ impl<'a> GgufCursor<'a> {
             );
         }
 
-        for _ in 0..len {
-            self.skip_value_with_depth(nested, depth)?;
+        // Stack of (element_type, elements_remaining) pairs. Depth is bounded
+        // only by nesting of arrays, not by a hard-coded recursion limit.
+        let mut stack: Vec<(u32, u64)> = Vec::new();
+        stack.push((nested, len));
+
+        while let Some((ty, mut count)) = stack.pop() {
+            if ty == GGUF_VALUE_TYPE_ARRAY {
+                if count == 0 {
+                    continue;
+                }
+                // Each element is an independent sub-array; read one header.
+                let sub_ty = self.read_u32()?;
+                let sub_len = self.read_u64()?;
+                let bytes_left = self.bytes.len().saturating_sub(self.offset) as u64;
+                if sub_len > bytes_left {
+                    return Err(self.unsupported(
+                        "GGUF nested array length exceeds remaining metadata bytes".into(),
+                    ));
+                }
+                count -= 1;
+                if count > 0 {
+                    stack.push((ty, count));
+                }
+                stack.push((sub_ty, sub_len));
+            } else {
+                for _ in 0..count {
+                    self.skip_scalar_value(ty)?;
+                }
+            }
         }
         Ok(())
     }

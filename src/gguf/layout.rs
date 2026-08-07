@@ -10,7 +10,8 @@
 use std::collections::HashMap;
 
 use super::cursor::{
-    GGUF_MAGIC, GGUF_VALUE_TYPE_STRING, GGUF_VERSION, GgufCursor, invalid_layout, unsupported,
+    GGUF_MAGIC, GGUF_VALUE_TYPE_STRING, GGUF_VERSION, GgufCursor, invalid_layout,
+    is_signed_layout_type, unsupported,
 };
 use super::tensor::{DType, Tensor};
 use crate::error::{ParserError, Result};
@@ -23,8 +24,10 @@ const MAX_TENSOR_DIMS: usize = 8;
 /// Parsed GGUF metadata key-value store.
 ///
 /// GGUF stores arbitrary scalar KV pairs. We keep strings and numeric
-/// values in two typed maps; array values are skipped (their byte
-/// contents remain available via the original file buffer if needed).
+/// values in typed maps; signed integers are additionally kept in
+/// `signed_numerics` so callers can distinguish bit-preserved negatives
+/// from large unsigned `UINT64` values. Array values are skipped (their
+/// byte contents remain available via the original file buffer if needed).
 #[derive(Debug, Clone, Default)]
 pub struct GgufMetadata {
     /// String-typed KV pairs (e.g. `general.architecture = "olmoe"`).
@@ -32,6 +35,10 @@ pub struct GgufMetadata {
     /// Numeric-typed KV pairs coerced to `u64`
     /// (e.g. `olmoe.expert_count = 64`).
     pub numerics: HashMap<String, u64>,
+    /// Signed integer KV pairs coerced to `i64`, keyed separately so
+    /// `numeric()` can reject negatives without rejecting large unsigned
+    /// `UINT64` metadata.
+    pub(crate) signed_numerics: HashMap<String, i64>,
     /// `f32`-typed KV pairs.
     pub floats_32: HashMap<String, f32>,
     /// `f64`-typed KV pairs.
@@ -49,14 +56,14 @@ impl GgufMetadata {
 
     /// Convenience: numeric KV coerced to `usize`.
     ///
-    /// Returns `None` when the stored value is larger than `i64::MAX`,
-    /// which for signed value types indicates a bit-preserved negative
-    /// number that should not be interpreted as a non-negative quantity.
+    /// Signed integer KVs are checked first: a negative value returns
+    /// `None`. Unsigned `UINT64` values larger than `i64::MAX` are still
+    /// accepted as long as they fit in `usize`.
     pub fn numeric(&self, key: &str) -> Option<usize> {
-        let &v = self.numerics.get(key)?;
-        if v > i64::MAX as u64 {
-            return None;
+        if let Some(&s) = self.signed_numerics.get(key) {
+            return usize::try_from(s).ok();
         }
+        let &v = self.numerics.get(key)?;
         usize::try_from(v).ok()
     }
 
@@ -74,8 +81,8 @@ impl GgufMetadata {
         match self.numerics.get("general.file_type").copied() {
             Some(0) => "F32".into(),
             Some(1) => "F16".into(),
-            Some(n) if n <= i64::MAX as u64 => format!("GGUF({n})"),
-            _ => "unknown".into(),
+            Some(n) => format!("GGUF({n})"),
+            None => "unknown".into(),
         }
     }
 
@@ -442,6 +449,9 @@ fn capture_numeric_kv(
     value_type: u32,
 ) -> Result<()> {
     let v = cursor.read_numeric_as_u64(value_type)?;
+    if is_signed_layout_type(value_type) {
+        metadata.signed_numerics.insert(key.clone(), v as i64);
+    }
     metadata.numerics.insert(key, v);
     Ok(())
 }
@@ -495,4 +505,24 @@ fn tensor_block_sort_key(name: &str) -> (usize, String) {
         .and_then(|(idx, _)| idx.parse::<usize>().ok())
         .unwrap_or(usize::MAX);
     (block, name.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numeric_keeps_large_unsigned_and_rejects_negative_signed() {
+        let mut meta = GgufMetadata::default();
+
+        // A UINT64 larger than i64::MAX is still accepted when it fits in usize.
+        meta.numerics.insert("big".into(), u64::MAX);
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(meta.numeric("big"), Some(usize::MAX));
+
+        // A signed negative value must not wrap into a positive usize.
+        meta.numerics.insert("neg".into(), (-7i64) as u64);
+        meta.signed_numerics.insert("neg".into(), -7);
+        assert_eq!(meta.numeric("neg"), None);
+    }
 }
