@@ -29,6 +29,10 @@ Mixture-of-Experts per-expert weight extractor.
 This crate **owns**:
 
 - GGUF v3 deserialization (header, KV metadata, tensor directory).
+- Safetensors **header** deserialization, deterministic manifests, and MoE
+  router/expert candidate discovery — single file, Hugging Face shard index,
+  or directory. Cargo feature `safetensors`, **off by default**; port in
+  flight, see [#10](https://github.com/rmems/engram-parser/issues/10).
 - MoE expert enumeration (`list_experts`).
 - Per-expert raw weight extraction (`extract_expert` — gate/up/down byte
   buffers with shape and dtype metadata).
@@ -43,15 +47,21 @@ This crate **does not own**:
 - Tokenization, inference orchestration, or SNN dynamics.
 - Full checkpoint routing or model-family adapters (see
   [`cortex-tensor`](https://github.com/rmems/cortex-tensor)).
+- Safetensors payload **loading** (mmap tensor extraction) and Hugging Face
+  `config.json` interpretation — those stay corinth-specific
+  (`src/moe/safetensors/{map,config}.rs`) and are not ported.
 
-**Allowed dependencies:** none — `[dependencies]` stays empty.
+**Allowed dependencies:** none — `[dependencies]` stays empty in **every**
+feature combination, including `--features safetensors`. The safetensors
+header and HF shard-index JSON parsers are hand-written; the upstream
+`safetensors` and `serde_json` crates are **forbidden** dependencies.
 
 **Forbidden dependencies:** inference engines, GPU backends, domain-specific
 adapters.
 
 | Crate | Role |
 |-------|------|
-| `engram-parser` | GGUF parse + per-expert weight extraction |
+| `engram-parser` | GGUF + safetensors (feature-gated) parse + per-expert weight extraction |
 | [`cortex-tensor`](https://github.com/rmems/cortex-tensor) | Tensor math + MoE routing on extracted weights |
 | [`hybrid-fusion`](https://github.com/rmems/hybrid-fusion) | ANN→SNN orchestration |
 | [`neuromod`](https://github.com/Limen-Neural/neuromod) | SNN neuron dynamics (downstream consumer) |
@@ -60,6 +70,12 @@ See [LIM-9](https://linear.app/saaq-spiking-adaptive-activity/issue/LIM-9/plan-r
 for the full Rust runtime/deployment boundary matrix and
 [issue #4](https://github.com/rmems/engram-parser/issues/4) for
 this repo's tracking issue.
+
+> **Charter note (2026-08):** earlier revisions of this section and of
+> [#10](https://github.com/rmems/engram-parser/issues/10) said the charter was
+> "GGUF-only" and that safetensors would live in a separate
+> `safetensors-parser` crate. Superseded — see
+> [Origin / modularization (#10)](#origin--modularization-10).
 
 
 ## Origin / modularization (#7)
