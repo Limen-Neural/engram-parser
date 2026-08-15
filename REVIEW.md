@@ -117,7 +117,8 @@ There is no `rustfmt.toml` in this repo; defaults are fine.
 | `fmt` (apply) | `cargo fmt` | Rewrites sources to rustfmt style (silent if already clean) |
 | `fmt` (CI) | `cargo fmt --check` | Style matches rustfmt; fails with a diff if not |
 | `clippy` | `cargo clippy --all-targets --all-features -- -D warnings` | No Clippy warnings on lib + tests |
-| `build` | `cargo build --all-features` | Crate builds (features currently empty; flag kept for CI parity) |
+| `build` (all features) | `cargo build --all-features` | Crate builds with `safetensors` enabled |
+| `build` (default) | `cargo build` | **Default build stays GGUF-only and dep-free** — not yet a CI job, see #10 |
 | `test` | `cargo test --all-features` | Unit (`src/gguf/tensor.rs`), smoke (`tests/gguf_smoke.rs`), doctests |
 | `clean-tree` | `git status --porcelain` empty | No stray outputs after build/test |
 | `coverage` (opt) | `cargo llvm-cov --all-targets --all-features --locked --lcov --output-path lcov.info` | LCOV for Codecov (CI installs `cargo-llvm-cov`) |
@@ -345,7 +346,7 @@ cargo run --locked --example benchmark --profile bench --features bench,cuda
 |------|------------------|
 | CUDA / PTX / Nsight / real-model GPU benches | **blackwell-kernel-lab** (experiments) or myelin-accelerator |
 | Row dequant / mmap host load | corinth-canal (reference) or downstream |
-| Safetensors | engram-parser #10 (separate) |
+| Safetensors **payload** mmap load + HF `config.json` | corinth-canal (reference) — only the header/manifest/discovery half is ported here, see #10 |
 | Routing / MoE matmul / generation | cortex-tensor / hybrid stack |
 | Optional myelin dep on this crate | **Never** — keeps zero-dep charter |
 
@@ -360,6 +361,7 @@ cargo run --locked --example benchmark --profile bench --features bench,cuda
 | Security audit / Snyk | `.github/workflows/security.yml` (not required for every local edit) |
 | Docker image | `Dockerfile` (`ARG RUST_VERSION=1.97.1`) + `.github/workflows/docker-build.yml` |
 | T1 real GGUF / T2 GPU | **Not in CI** — local pilots only |
+| Default-feature build (`cargo build`, no features) | **No workflow job yet** — every CI job passes `--all-features`, so a `#[cfg(feature = "safetensors")]` mistake that breaks the default build would ship green. Tracked in #10 |
 
 **Yes, the GitHub workflow is part of a Rust version bump:** keep `validate` on
 `stable` (auto-tracks latest), and update the `msrv` job + `Cargo.toml`
