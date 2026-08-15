@@ -1,0 +1,20 @@
+README.md
+  s_361d9ab62ab34e::t_2350e83e44e0f7 269
+  s_361d9ab62ab34e::t_ac9d3dedcc1600 191-213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fba2a97e3a2184a8d95f95bd1d1ed7de76ed66fb",
+  "prompts": {},
+  "sessions": {
+    "s_361d9ab62ab34e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce0b9d69-6c57-449b-8540-bb992666e824",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
