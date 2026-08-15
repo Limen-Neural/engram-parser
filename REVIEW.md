@@ -3,13 +3,15 @@
 Local commands that must pass before merge or PR for this crate.
 Aligned with `.github/workflows/ci.yml` and the README Development section.
 
-**Charter:** pure-Rust, **zero-dependency** GGUF v3 parse + MoE raw expert
-extract. **No CUDA, dequant, mmap, or GGML compute** in this repo. GGUF’s
+**Charter:** pure-Rust, **zero-dependency** checkpoint parse + MoE raw expert
+extract — GGUF v3 today, plus safetensors **headers** behind an off-by-default
+`safetensors` feature once #10 lands (manifest + candidate discovery only, no
+payload). **No CUDA, dequant, mmap, or GGML compute** in this repo. GGUF’s
 on-wire `ggml_type` codes are metadata only (labels + packed sizes).
 
 | Repo | Role |
 |------|------|
-| **engram-parser** (this) | GGUF parse + inventory + raw expert bytes |
+| **engram-parser** (this) | GGUF parse + inventory + raw expert bytes; safetensors header/manifest/discovery (feature-gated, planned — #10) |
 | **myelin-accelerator** | Production CUDA kernels / FFI (`~/Limen-Neural/myelin-accelerator`) |
 | **blackwell-kernel-lab** | Scratch GPU experiments / real-model pipelines (`~/rmems/blackwell-kernel-lab`) |
 

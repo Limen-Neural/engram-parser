@@ -13,7 +13,10 @@ All notable changes to this project are documented in this file.
   `REVIEW.md`, corinth-canal `docs/MODULE_STATUS.md`, and cortex-tensor#9.
   The zero-dependency guarantee is unchanged: `[dependencies]` stays empty in
   every feature combination. Still a one-way copy from `rmems/corinth-canal`
-  inspiration — no dependency in either direction.
+  inspiration — **for safetensors** there is no dependency in either
+  direction. (GGUF is the opposite case: corinth-canal#115 plans a real
+  `engram-parser` dependency, gated on #45.) No code has landed yet; this
+  entry records the decision only.
 
 ## [0.2.0] - 2026-08-02
 

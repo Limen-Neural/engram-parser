@@ -61,7 +61,7 @@ adapters.
 
 | Crate | Role |
 |-------|------|
-| `engram-parser` | GGUF + safetensors (feature-gated) parse + per-expert weight extraction |
+| `engram-parser` | GGUF parse + per-expert weight extraction; feature-gated safetensors header parse, manifest, and discovery (no payload) |
 | [`cortex-tensor`](https://github.com/rmems/cortex-tensor) | Tensor math + MoE routing on extracted weights |
 | [`hybrid-fusion`](https://github.com/rmems/hybrid-fusion) | ANN→SNN orchestration |
 | [`neuromod`](https://github.com/Limen-Neural/neuromod) | SNN neuron dynamics (downstream consumer) |
@@ -102,12 +102,18 @@ HuggingFace “IQ3_M” preset). MoE extraction remains free functions
 ## Origin / modularization (#10)
 
 Safetensors **header** inspection, deterministic manifest generation, and MoE
-router/expert candidate discovery were ported using one-way inspiration from
-the same [`rmems/corinth-canal`](https://github.com/rmems/corinth-canal)
+router/expert candidate discovery **will be ported** using one-way inspiration
+from the same [`rmems/corinth-canal`](https://github.com/rmems/corinth-canal)
 reference implementation (**no** runtime dependency on corinth-canal, in
-either direction). Ported set: `manifest`, `discovery`, `json`, `paths`,
+either direction). Set to port: `manifest`, `discovery`, `json`, `paths`,
 `validate` from `src/moe/safetensors/`. Not ported: `config` (HF
 `config.json`) and `map` (mmap load / token extraction) — corinth-specific.
+
+> **Status: planned, not shipped.** This section records the decision. No
+> safetensors code has landed yet and there is no `safetensors` cargo feature
+> to enable — `cargo build --features safetensors` will fail until the port
+> lands. Track progress on
+> [#10](https://github.com/rmems/engram-parser/issues/10).
 
 - Tracking: [engram-parser#10](https://github.com/rmems/engram-parser/issues/10)
 - Corinth extraction companion: [corinth-canal#116](https://github.com/rmems/corinth-canal/issues/116),
@@ -125,7 +131,8 @@ crate and that "engram-parser charter remains GGUF-only." That is
 **reversed**. The charter was never "GGUF" — it is *zero-dependency checkpoint
 deserialization plus MoE raw-weight extraction*, and safetensors header
 inspection is exactly that shape: header-only parse, deterministic manifest,
-name/shape candidate discovery, raw bytes out, no math, no mmap. A separate
+name/shape candidate discovery — tensor names, dtypes, shapes, shard
+attribution and byte offsets out; no payload bytes, no math, no mmap. A separate
 crate would have duplicated this crate's error type, dtype model, MSRV policy,
 CI, Docker, and release plumbing to host ~1.4k lines that share every one of
 its invariants, and
@@ -137,9 +144,12 @@ empty in every feature combination.** No `safetensors-parser` repo was or will
 be created.
 
 **Unchanged from the original plan:** one-way copy from inspiration; **no dep
-on corinth-canal** and no corinth dep on this crate; corinth keeps an
-unmodified reference copy of `src/moe/safetensors/` and keeps using it in its
-Router / `CheckpointBackend` experiment paths. This is *not* a
+on corinth-canal**, and — *for safetensors specifically* — no corinth dep on
+this crate either; corinth keeps an unmodified reference copy of
+`src/moe/safetensors/` and keeps using it in its Router / `CheckpointBackend`
+experiment paths. (GGUF is the opposite case: corinth intends a real
+`engram-parser` dependency there, see
+[corinth-canal#115](https://github.com/rmems/corinth-canal/issues/115).) This is *not* a
 `PROMOTION_RULES.md` "frozen" handoff — see that file's **One-way extractions**
 section.
 
@@ -189,8 +199,9 @@ falls back to `general.file_type` (`0→F32`, `1→F16`, else `GGUF(n)`).
 ## Ecosystem / Sibling parsers (LIM-9)
 
 - **engram-parser** (this crate): the canonical zero-dep deserializer for both
-  supported checkpoint containers — GGUF v3 (always on) and safetensors headers
-  (cargo feature `safetensors`) — plus per-expert MoE raw weight ripping.
+  supported checkpoint containers — GGUF v3 (always on, including per-expert MoE
+  raw weight ripping) and safetensors **headers** (cargo feature `safetensors`:
+  manifest + candidate discovery only, no payload extraction).
 - **There is no sibling parser crate.** The plan to ship safetensors from a
   dedicated `safetensors-parser` crate is **superseded** (2026-08); see
   [Origin / modularization (#10)](#origin--modularization-10). No
