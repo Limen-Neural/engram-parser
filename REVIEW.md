@@ -119,8 +119,8 @@ There is no `rustfmt.toml` in this repo; defaults are fine.
 | `fmt` (apply) | `cargo fmt` | Rewrites sources to rustfmt style (silent if already clean) |
 | `fmt` (CI) | `cargo fmt --check` | Style matches rustfmt; fails with a diff if not |
 | `clippy` | `cargo clippy --all-targets --all-features -- -D warnings` | No Clippy warnings on lib + tests |
-| `build` (all features) | `cargo build --all-features` | Crate builds with `safetensors` enabled |
-| `build` (default) | `cargo build` | **Default build stays GGUF-only and dep-free** — not yet a CI job, see #10 |
+| `build` (all features) | `cargo build --all-features` | Crate builds with every declared feature; `[features]` is still empty, so today this equals the default build. Becomes meaningful when `safetensors` lands (#10) |
+| `build` (default) | `cargo build` | **Default build stays GGUF-only and dep-free** — will matter once `safetensors` exists; not yet a CI job, see #10 |
 | `test` | `cargo test --all-features` | Unit (`src/gguf/tensor.rs`), smoke (`tests/gguf_smoke.rs`), doctests |
 | `clean-tree` | `git status --porcelain` empty | No stray outputs after build/test |
 | `coverage` (opt) | `cargo llvm-cov --all-targets --all-features --locked --lcov --output-path lcov.info` | LCOV for Codecov (CI installs `cargo-llvm-cov`) |
@@ -363,7 +363,7 @@ cargo run --locked --example benchmark --profile bench --features bench,cuda
 | Security audit / Snyk | `.github/workflows/security.yml` (not required for every local edit) |
 | Docker image | `Dockerfile` (`ARG RUST_VERSION=1.97.1`) + `.github/workflows/docker-build.yml` |
 | T1 real GGUF / T2 GPU | **Not in CI** — local pilots only |
-| Default-feature build (`cargo build`, no features) | **No workflow job yet** — every CI job passes `--all-features`, so a `#[cfg(feature = "safetensors")]` mistake that breaks the default build would ship green. Tracked in #10 |
+| Default-feature build (`cargo build`, no features) | **No workflow job yet** — every feature-sensitive CI step (`clippy`, `build`, `test`, `llvm-cov`) passes `--all-features`; only `cargo fmt --check` is feature-agnostic. Once `safetensors` lands (#10), a `#[cfg(feature = "safetensors")]` mistake that breaks the default build would ship green |
 
 **Yes, the GitHub workflow is part of a Rust version bump:** keep `validate` on
 `stable` (auto-tracks latest), and update the `msrv` job + `Cargo.toml`

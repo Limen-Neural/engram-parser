@@ -198,10 +198,11 @@ falls back to `general.file_type` (`0→F32`, `1→F16`, else `GGUF(n)`).
 
 ## Ecosystem / Sibling parsers (LIM-9)
 
-- **engram-parser** (this crate): the canonical zero-dep deserializer for both
-  supported checkpoint containers — GGUF v3 (always on, including per-expert MoE
-  raw weight ripping) and safetensors **headers** (cargo feature `safetensors`:
-  manifest + candidate discovery only, no payload extraction).
+- **engram-parser** (this crate): the canonical zero-dep GGUF v3 deserializer +
+  per-expert MoE raw weight ripper (shipped). Safetensors **header** parsing —
+  manifest + candidate discovery only, no payload extraction — is **planned**
+  behind a `safetensors` cargo feature that does not exist yet; see
+  [#10](https://github.com/rmems/engram-parser/issues/10).
 - **There is no sibling parser crate.** The plan to ship safetensors from a
   dedicated `safetensors-parser` crate is **superseded** (2026-08); see
   [Origin / modularization (#10)](#origin--modularization-10). No
