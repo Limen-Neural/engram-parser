@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Charter reversal (#10):** safetensors support will ship **inside this
+  crate** behind an off-by-default `safetensors` cargo feature, not in a
+  separate `safetensors-parser` crate. This supersedes the "engram-parser
+  charter remains GGUF-only" language previously carried by `README.md`,
+  `REVIEW.md`, corinth-canal `docs/MODULE_STATUS.md`, and cortex-tensor#9.
+  The zero-dependency guarantee is unchanged: `[dependencies]` stays empty in
+  every feature combination. Still a one-way copy from `rmems/corinth-canal`
+  inspiration — no dependency in either direction.
+
 ## [0.2.0] - 2026-08-02
 
 ### Added
