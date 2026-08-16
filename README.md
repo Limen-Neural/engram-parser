@@ -29,6 +29,10 @@ Mixture-of-Experts per-expert weight extractor.
 This crate **owns**:
 
 - GGUF v3 deserialization (header, KV metadata, tensor directory).
+- Safetensors **header** deserialization, deterministic manifests, and MoE
+  router/expert candidate discovery — single file, Hugging Face shard index,
+  or directory. Cargo feature `safetensors`, **off by default**; port in
+  flight, see [#10](https://github.com/rmems/engram-parser/issues/10).
 - MoE expert enumeration (`list_experts`).
 - Per-expert raw weight extraction (`extract_expert` — gate/up/down byte
   buffers with shape and dtype metadata).
@@ -43,15 +47,21 @@ This crate **does not own**:
 - Tokenization, inference orchestration, or SNN dynamics.
 - Full checkpoint routing or model-family adapters (see
   [`cortex-tensor`](https://github.com/rmems/cortex-tensor)).
+- Safetensors payload **loading** (mmap tensor extraction) and Hugging Face
+  `config.json` interpretation — those stay corinth-specific
+  (`src/moe/safetensors/{map,config}.rs`) and are not ported.
 
-**Allowed dependencies:** none — `[dependencies]` stays empty.
+**Allowed dependencies:** none — `[dependencies]` stays empty in **every**
+feature combination, including `--features safetensors`. The safetensors
+header and HF shard-index JSON parsers are hand-written; the upstream
+`safetensors` and `serde_json` crates are **forbidden** dependencies.
 
 **Forbidden dependencies:** inference engines, GPU backends, domain-specific
 adapters.
 
 | Crate | Role |
 |-------|------|
-| `engram-parser` | GGUF parse + per-expert weight extraction |
+| `engram-parser` | GGUF parse + per-expert weight extraction; feature-gated safetensors header parse, manifest, and discovery (no payload) |
 | [`cortex-tensor`](https://github.com/rmems/cortex-tensor) | Tensor math + MoE routing on extracted weights |
 | [`hybrid-fusion`](https://github.com/rmems/hybrid-fusion) | ANN→SNN orchestration |
 | [`neuromod`](https://github.com/Limen-Neural/neuromod) | SNN neuron dynamics (downstream consumer) |
@@ -60,6 +70,12 @@ See [LIM-9](https://linear.app/saaq-spiking-adaptive-activity/issue/LIM-9/plan-r
 for the full Rust runtime/deployment boundary matrix and
 [issue #4](https://github.com/rmems/engram-parser/issues/4) for
 this repo's tracking issue.
+
+> **Charter note (2026-08):** earlier revisions of this section and of
+> [#10](https://github.com/rmems/engram-parser/issues/10) said the charter was
+> "GGUF-only" and that safetensors would live in a separate
+> `safetensors-parser` crate. Superseded — see
+> [Origin / modularization (#10)](#origin--modularization-10).
 
 
 ## Origin / modularization (#7)
@@ -82,6 +98,60 @@ downstream / corinth-canal reference). Wire-type labels follow the
 corinth-canal table (e.g. type **31** is historical `Q4_0_4_4`, not the
 HuggingFace “IQ3_M” preset). MoE extraction remains free functions
 (`list_experts` / `extract_expert`); traits are out of scope for #7.
+
+## Origin / modularization (#10)
+
+Safetensors **header** inspection, deterministic manifest generation, and MoE
+router/expert candidate discovery **will be ported** using one-way inspiration
+from the same [`rmems/corinth-canal`](https://github.com/rmems/corinth-canal)
+reference implementation (**no** runtime dependency on corinth-canal, in
+either direction). Set to port: `manifest`, `discovery`, `json`, `paths`,
+`validate` from `src/moe/safetensors/`. Not ported: `config` (HF
+`config.json`) and `map` (mmap load / token extraction) — corinth-specific.
+
+> **Status: planned, not shipped.** This section records the decision. No
+> safetensors code has landed yet and there is no `safetensors` cargo feature
+> to enable — `cargo build --features safetensors` will fail until the port
+> lands. Track progress on
+> [#10](https://github.com/rmems/engram-parser/issues/10).
+
+- Tracking: [engram-parser#10](https://github.com/rmems/engram-parser/issues/10)
+- Corinth extraction companion: [corinth-canal#116](https://github.com/rmems/corinth-canal/issues/116),
+  unblocked by [corinth-canal#147](https://github.com/rmems/corinth-canal/issues/147)
+  (that module split drew this exact boundary in code)
+- Consumer coordination: [cortex-tensor#9](https://github.com/rmems/cortex-tensor/issues/9),
+  [hybrid-fusion#27](https://github.com/rmems/hybrid-fusion/issues/27)
+- Linear: [RM-344](https://linear.app/rpd-34/issue/RM-344),
+  [LIM-9](https://linear.app/rpd-34/issue/LIM-9)
+
+**Charter reversal (2026-08).** #10, this README, corinth's
+`docs/MODULE_STATUS.md`, and cortex-tensor#9 all previously stated that the
+reusable safetensors surface would land in a dedicated `safetensors-parser`
+crate and that "engram-parser charter remains GGUF-only." That is
+**reversed**. The charter was never "GGUF" — it is *zero-dependency checkpoint
+deserialization plus MoE raw-weight extraction*, and safetensors header
+inspection is exactly that shape: header-only parse, deterministic manifest,
+name/shape candidate discovery — tensor names, dtypes, shapes, shard
+attribution and byte offsets out; no payload bytes, no math, no mmap. A separate
+crate would have duplicated this crate's error type, dtype model, MSRV policy,
+CI, Docker, and release plumbing to host ~1.4k lines that share every one of
+its invariants, and
+[hybrid-fusion#27](https://github.com/rmems/hybrid-fusion/issues/27) already
+names engram-parser as the home for concrete safetensors loaders. The
+`safetensors` cargo feature provides the same isolation a separate crate would
+have: **default builds are unchanged and GGUF-only, and `[dependencies]` stays
+empty in every feature combination.** No `safetensors-parser` repo was or will
+be created.
+
+**Unchanged from the original plan:** one-way copy from inspiration; **no dep
+on corinth-canal**, and — *for safetensors specifically* — no corinth dep on
+this crate either; corinth keeps an unmodified reference copy of
+`src/moe/safetensors/` and keeps using it in its Router / `CheckpointBackend`
+experiment paths. (GGUF is the opposite case: corinth intends a real
+`engram-parser` dependency there, see
+[corinth-canal#115](https://github.com/rmems/corinth-canal/issues/115).) This is *not* a
+`PROMOTION_RULES.md` "frozen" handoff — see that file's **One-way extractions**
+section.
 
 ## Quick start
 
@@ -128,14 +198,31 @@ falls back to `general.file_type` (`0→F32`, `1→F16`, else `GGUF(n)`).
 
 ## Ecosystem / Sibling parsers (LIM-9)
 
-- **engram-parser** (this crate): canonical zero-dep GGUF v3 deserializer + per-expert MoE raw weight ripper.
-- Safetensors extraction (header inspection, deterministic manifest, MoE router/expert candidate discovery via classify + groups + layout families) from `rmems/corinth-canal` (experimental source of inspiration) is tracked as a **separate issue** in this repo: #10 (parallel to the GGUF work in #7).
-  - Source-side bootstrap/supporting: rmems/corinth-canal#116.
-  - Coordination for consumers (e.g. future multi-format in cortex): rmems/cortex-tensor#9.
-  - The reusable implementation will target a dedicated rmems crate (per org boundary matrix LIM-9); engram-parser charter remains GGUF-only.
-- **Clarification**: one-way extraction/copy of code from inspiration. We are not adding any dependency from corinth-canal. corinth-canal keeps an unmodified reference copy (per its PROMOTION_RULES "frozen" status). See #10, #7, and the plan for full cross-links and "no dep on corinth-canal" language.
-
-Cross-links and updates performed when #10 was created.
+- **engram-parser** (this crate): the canonical zero-dep GGUF v3 deserializer +
+  per-expert MoE raw weight ripper (shipped). Safetensors **header** parsing —
+  manifest + candidate discovery only, no payload extraction — is **planned**
+  behind a `safetensors` cargo feature that does not exist yet; see
+  [#10](https://github.com/rmems/engram-parser/issues/10).
+- **There is no sibling parser crate.** The plan to ship safetensors from a
+  dedicated `safetensors-parser` crate is **superseded** (2026-08); see
+  [Origin / modularization (#10)](#origin--modularization-10). No
+  `rmems/safetensors-parser` repo exists or will be created.
+- **Clarification (unchanged):** one-way extraction/copy of code from
+  inspiration. We add **no** dependency on `rmems/corinth-canal`, and
+  corinth-canal adds **no** dependency on this crate for safetensors.
+  corinth-canal keeps an unmodified reference copy of `src/moe/safetensors/`
+  and keeps using it.
+- Source-side tracking: [corinth-canal#116](https://github.com/rmems/corinth-canal/issues/116)
+  (safetensors extraction) and [corinth-canal#115](https://github.com/rmems/corinth-canal/issues/115)
+  (GGUF). Note the asymmetry: corinth intends a real `engram-parser`
+  **dependency** for GGUF in #115, gated on
+  [#45](https://github.com/rmems/engram-parser/issues/45); safetensors is a
+  **copy, never a dependency**, and is not gated on #45 because that surface is
+  header-only.
+- Consumer coordination: [cortex-tensor#9](https://github.com/rmems/cortex-tensor/issues/9)
+  (closed as duplicate; its premise is superseded by this decision) and
+  [hybrid-fusion#27](https://github.com/rmems/hybrid-fusion/issues/27), which
+  already names this crate as the home for concrete GGUF/safetensors loaders.
 
 ## Development
 
@@ -191,7 +278,7 @@ docker pull ghcr.io/rmems/engram-parser:main
 
 See the issue bodies for full ACs and corinth-canal inspiration patterns (one-way copy only; no dep on corinth-canal).
 
-Cross-reference: #11, #8, #9, #7, #5, LIM-9.
+Cross-reference: #11, #8, #9, #7, #10, #5, LIM-9.
 
 ## MSRV (Minimum Supported Rust Version)
 
