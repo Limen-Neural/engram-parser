@@ -38,7 +38,7 @@ jobs:
 
       # Swatinem/rust-cache@v2
       - name: Cache Cargo + target
-        uses: Swatinem/rust-cache@a45951ff880207c249adf57334cf2e9bd81d6e1e
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16
         with:
           shared-key: "release-v1"
           cache-on-failure: false
