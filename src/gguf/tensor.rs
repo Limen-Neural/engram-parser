@@ -485,9 +485,11 @@ impl Tensor {
                 ),
             });
         }
-        Ok(bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        let (chunks, remainder) = bytes.as_chunks::<4>();
+        debug_assert!(remainder.is_empty());
+        Ok(chunks
+            .iter()
+            .map(|&chunk| f32::from_le_bytes(chunk))
             .collect())
     }
 
@@ -510,9 +512,11 @@ impl Tensor {
                 ),
             });
         }
-        Ok(bytes
-            .chunks_exact(2)
-            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        let (chunks, remainder) = bytes.as_chunks::<2>();
+        debug_assert!(remainder.is_empty());
+        Ok(chunks
+            .iter()
+            .map(|&chunk| u16::from_le_bytes(chunk))
             .collect())
     }
 
@@ -536,9 +540,11 @@ impl Tensor {
                 ),
             });
         }
-        let out: Vec<f32> = bytes
-            .chunks_exact(2)
-            .map(|c| f16_bits_to_f32(u16::from_le_bytes([c[0], c[1]])))
+        let (chunks, remainder) = bytes.as_chunks::<2>();
+        debug_assert!(remainder.is_empty());
+        let out: Vec<f32> = chunks
+            .iter()
+            .map(|&chunk| f16_bits_to_f32(u16::from_le_bytes(chunk)))
             .collect();
         Ok(out)
     }
