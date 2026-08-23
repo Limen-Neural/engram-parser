@@ -90,7 +90,7 @@ GGUF layout parsing and MoE expert **raw-byte** extraction were expanded using o
 
 GGUF stores each tensor dtype as a `ggml_type` integer. `engram-parser` maps those codes to labels and packed byte sizes so payload and MoE slices remain in range. It does **not** implement the GGML runtime, GPU kernels, or general dequantized inference.
 
-Wire-type labels follow the Corinth reference discipline: for example, historical wire type **31** is `Q4_0_4_4`, not the Hugging Face preset name “IQ3_M”.
+Wire-type labels follow the Corinth reference discipline: for example, historical wire type **31** is `Q4_0_4_4`, not the Hugging Face preset name “IQ3_M”. This crate currently has no packed byte-size model for wire type 31, so such a checkpoint is labeled correctly but rejected during layout parsing rather than being treated as supported.
 
 ## Origin / modularization — Safetensors (#10)
 
@@ -234,10 +234,10 @@ cargo test --all-features
 cargo llvm-cov --all-targets --all-features --locked --lcov --output-path lcov.info
 ```
 
-Real GGUF pilots require local checkpoint files and are intentionally not CI fixtures:
+Real GGUF pilots require local checkpoint files and are intentionally not CI fixtures. `load_gguf` reads and retains the complete file rather than memory-mapping it, so ensure available RAM exceeds the model file size plus working overhead before running a multi-gigabyte checkpoint.
 
 ```bash
-ENGRAM_GGUF=~/.models/gguf/.../model.gguf \
+ENGRAM_GGUF=~/.models/gguf/.../model.gguf ENGRAM_EXPECT_MOE=1 \
   cargo test --test real_gguf -- --ignored --nocapture
 
 cargo run --example inspect_gguf -- ~/.models/gguf/.../model.gguf
