@@ -62,7 +62,7 @@ This crate **does not own**:
 - CUDA acceleration → [`myelin-accelerator`](https://github.com/Limen-Neural/myelin-accelerator);
 - end-to-end SAAQ experimentation → [`corinth-canal`](https://github.com/rmems/corinth-canal).
 
-**Allowed dependencies:** none. `[dependencies]` is intentionally empty and is expected to remain empty under the planned `safetensors` feature. Header/shard-index JSON parsing is implemented in-crate rather than through `serde_json` or the upstream `safetensors` crate.
+**Allowed dependencies:** none. `[dependencies]` is intentionally empty and is expected to remain empty under the planned `safetensors` feature. The planned header/shard-index JSON parsing will be implemented in-crate rather than through `serde_json` or the upstream `safetensors` crate.
 
 **Forbidden dependencies:** inference frameworks, GPU backends, domain-specific adapters, and any dependency on `corinth-canal`.
 
@@ -200,7 +200,7 @@ Current GGUF surface includes:
 - `extract_expert`, `list_experts`;
 - `MoeExpertWeights`, `RawTensor`;
 - `ParserError`, `Result`;
-- public GGML/GGUF constants and labels.
+- public `GGML_TYPE_*` / `GGUF_VALUE_TYPE_*` constants and the `ggml_type_label` label function.
 
 Safetensors public types/functions will be documented only after #10 lands.
 
@@ -242,6 +242,8 @@ ENGRAM_GGUF=~/.models/gguf/.../model.gguf ENGRAM_EXPECT_MOE=1 \
 
 cargo run --example inspect_gguf -- ~/.models/gguf/.../model.gguf
 ```
+
+For directory scans, `ENGRAM_GGUF_MAX`, and MoE extraction sample counts, see [the T1 pilot guidance in `REVIEW.md`](REVIEW.md#t1--real-gguf-pilots-this-repo-cpu-only).
 
 GPU experiments belong in `blackwell-kernel-lab` / `myelin-accelerator`, not as dependencies of this crate.
 
